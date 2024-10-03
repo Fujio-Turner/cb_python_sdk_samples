@@ -1,0 +1,18 @@
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Pipenv files
+Pipfile
+Pipfile.lock
+.venv/
+
+# Log files
+*.log
+
+# Python cache files (optional, but recommended)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
