@@ -24,6 +24,7 @@ import hashlib
 import os
 from datetime import timedelta
 import uuid
+import json
 
 # Couchbase connection parameters
 CB_HOST = "localhost"
@@ -63,14 +64,14 @@ try:
     # Uncomment the appropriate section based on the file type you want to process
 
     # Process CSV file
-    file_md5 = get_file_md5(CSV_FILE)
-    file_name = os.path.basename(CSV_FILE)
-    df = pd.read_csv(CSV_FILE)
+    #file_md5 = get_file_md5(CSV_FILE)
+    #file_name = os.path.basename(CSV_FILE)
+    #df = pd.read_csv(CSV_FILE)
     
     # Process Excel file
-    # file_md5 = get_file_md5(EXCEL_FILE)
-    # file_name = os.path.basename(EXCEL_FILE)
-    # df = pd.read_excel(EXCEL_FILE)
+    file_md5 = get_file_md5(EXCEL_FILE)
+    file_name = os.path.basename(EXCEL_FILE)
+    df = pd.read_excel(EXCEL_FILE)
     
     json_data = df.to_json(orient='records')
     records = json.loads(json_data)
@@ -94,11 +95,15 @@ for record in records:
     }
 
     try:
+        '''
         if "Customer Id" in record and record["Customer Id"] and str(record["Customer Id"]).strip():
             key = f"c:{record['Customer Id']}"
         else:
             key = f"c:{uuid.uuid4()}"
             record["key_exception"] = True
+        '''
+
+        key = "r:"+str(uuid.uuid4())
         
         result = collection.insert(key, record, InsertOptions(timeout=timedelta(seconds=5)))
         print(f"Inserted document with key: {key}, CAS: {result.cas}")
@@ -107,15 +112,6 @@ for record in records:
         print(f"Document with key {key} already exists. Skipping.")
     except TimeoutException:
         print(f"Timeout occurred while inserting document with key {key}. Retrying...")
-        try:
-            result = collection.insert(key, record, InsertOptions(timeout=timedelta(seconds=10)))
-            print(f"Retry successful. Inserted document with key: {key}, CAS: {result.cas}")
-        except Exception as retry_error:
-            print(f"Retry failed for key {key}: {str(retry_error)}")
-    except NetworkException as ne:
-        print(f"Network error occurred while inserting document with key {key}: {str(ne)}")
-    except ValueError as ve:
-        print(f"Value error for key {key}: {str(ve)}. Skipping this record.")
     except TypeError as te:
         print(f"Type error for key {key}: {str(te)}. Skipping this record.")
     except Exception as e:
