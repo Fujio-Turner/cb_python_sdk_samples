@@ -1,240 +1,130 @@
 """
-Provides exception handling for various Couchbase operations, including:
-- Connecting to the Couchbase cluster
-- Upserting documents
-- Getting documents
-- Performing subdocument operations
+Connects to a Couchbase cluster, processes a CSV or Excel file, and inserts the data into a Couchbase collection.
 
-The code defines several helper functions to handle common Couchbase exceptions, such as:
-- `upsert_document`: Upserts a document with error handling
-- `get_airline_by_key`: Gets a document by key with error handling
-- `sub_get_airline`: Gets subdocument fields with error handling
-- `sub_update_airline`: Updates subdocument fields with error handling
+The script performs the following steps:
+1. Connects to a Couchbase cluster using the provided connection parameters.
+2. Processes a CSV or Excel file, converts the data to JSON, and calculates the MD5 hash of the file.
+3. Iterates through the records, adds audit information, and inserts each record into the Couchbase collection.
+4. Handles various exceptions that may occur during the insertion process, such as document already exists, timeout, network errors, and value/type errors.
+5. Closes the Couchbase connection when the data insertion is complete.
 
-The code also includes a section that demonstrates the usage of these helper functions.
+pip install couchbase
+pip install pandas
+pip install openpyxl
+Docs on CSV/Excel: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.to_json.html
 """
-from datetime import timedelta
-import time
-
-# needed for any cluster connection
-from couchbase.auth import PasswordAuthenticator
+import pandas as pd
 from couchbase.cluster import Cluster
-# needed for options -- cluster, timeout, SQL++ (N1QL) query, etc.
-from couchbase.options import (ClusterOptions)
-# needed for subdocument operations
-import couchbase.subdocument as SD
+from couchbase.options import ClusterOptions
+from couchbase.auth import PasswordAuthenticator
+from couchbase.options import InsertOptions
+from couchbase.exceptions import DocumentExistsException, TimeoutException, NetworkException
+import json
+import time
+import hashlib
+import os
+from datetime import timedelta
+import uuid
 
-# needed for exception handling
-from couchbase.exceptions import (
-    CouchbaseException,
-    TimeoutException,
-    AuthenticationException,
-    DocumentNotFoundException,
-    DocumentExistsException,
-    CasMismatchException,
-    InvalidArgumentException,
-    PathNotFoundException,
-    BucketNotFoundException,
-    InvalidValueException,
-    DocumentLockedException
-)
+# Couchbase connection parameters
+CB_HOST = "localhost"
+CB_USER = "demo"
+CB_PASS = "password"
+CB_BUCKET = "example"
+CB_SCOPE = "_default"
+CB_COLLECTION = "_default"
 
-# Update this to your cluster
-ENDPOINT = "localhost"
-USERNAME = "demo"
-PASSWORD = "password"
-BUCKET_NAME = "travel-sample"
-CB_SCOPE = "inventory"
-CB_COLLECTION = "airline"
-# User Input ends here.
+SCRIPT_NAME = "python-user"
+SCRIPT_VERSION = "1.0"
 
+# File paths
+CSV_FILE = "demo_data/customers-10000.csv"
+EXCEL_FILE = "demo_data/table01September2024.xlsx"
+
+def get_file_md5(filename):
+    md5_hash = hashlib.md5()
+    with open(filename, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            md5_hash.update(byte_block)
+    return md5_hash.hexdigest()
+
+# Connect to Couchbase
+cluster = None
 try:
-    # Connect options - authentication
-    auth = PasswordAuthenticator(USERNAME, PASSWORD)
-    # get a reference to our cluster
-    options = ClusterOptions(auth)
-    # Sets a pre-configured profile called "wan_development" to help avoid latency issues
-    # when accessing Capella from a different Wide Area Network
-    # or Availability Zone(e.g. your laptop).
-    options.apply_profile('wan_development')
-    cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)
+    cluster = Cluster(f"couchbase://{CB_HOST}", ClusterOptions(PasswordAuthenticator(CB_USER, CB_PASS)))
+    bucket = cluster.bucket(CB_BUCKET)
+    collection = bucket.scope(CB_SCOPE).collection(CB_COLLECTION)
+    print("Successfully connected to Couchbase")
+except Exception as e:
+    print(f"Failed to connect to Couchbase: {str(e)}")
+    exit(1)
 
-    # Wait until the cluster is ready for use.
-    cluster.wait_until_ready(timedelta(seconds=10))
+# Process the file (CSV or Excel)
+try:
+    # Uncomment the appropriate section based on the file type you want to process
 
-    # get a reference to our bucket
-    cb = cluster.bucket(BUCKET_NAME)
+    # Process CSV file
+    file_md5 = get_file_md5(CSV_FILE)
+    file_name = os.path.basename(CSV_FILE)
+    df = pd.read_csv(CSV_FILE)
+    
+    # Process Excel file
+    # file_md5 = get_file_md5(EXCEL_FILE)
+    # file_name = os.path.basename(EXCEL_FILE)
+    # df = pd.read_excel(EXCEL_FILE)
+    
+    json_data = df.to_json(orient='records')
+    records = json.loads(json_data)
+    print(f"Successfully processed file: {file_name}")
+except Exception as e:
+    print(f"Error processing file: {str(e)}")
+    if cluster:
+        cluster.close()
+    exit(1)
 
-    # get a reference to our collection
-    cb_coll = cb.scope(CB_SCOPE).collection(CB_COLLECTION)
-except AuthenticationException as e:
-    print(f"Authentication error: {e}")
-except TimeoutException as e:
-    print(f"Timeout error: {e}")
-except BucketNotFoundException as e:
-    print(f"Bucket not found: {e}")
-except CouchbaseException as e:
-    print(f"Couchbase error: {e}")
+# Add audit information and insert records
+for record in records:
+    record["audit"] = {
+        "cr": {
+            "dt": time.time(),
+            "ver": SCRIPT_VERSION,
+            "by": SCRIPT_NAME,
+            "src": file_name,
+            "md5": file_md5
+        }
+    }
 
-# upsert document function
-def upsert_document(key, doc):
-    print("\nUpsert CAS: ")
-    start_time = time.time()
     try:
-        result = cb_coll.upsert(key, doc)
-        print(result.cas)
-    except DocumentExistsException as e:
-        print(f"Document already exists: {e}")
-    except InvalidValueException as e:
-        print(f"Invalid document value: {e}")
-    except TimeoutException as e:
-        print(f"Operation timed out: {e}")
-    except AuthenticationException as e:
-        print(f"Authentication failed: {e}")
-    except CouchbaseException as e:
-        print(f"Couchbase error occurred: {e}")
-    finally:
-        end_time = time.time()
-        execution_time = end_time - start_time
-        print(f"Upsert operation took {execution_time:.6f} seconds")
-
-# get document function
-def get_airline_by_key(key):
-    print("\nGet Result: ")
-    start_time = time.time()
-    try:
-        result = cb_coll.get(key)
-        print(result.content_as[str])
-        print("CAS:", result.cas)
-    except DocumentNotFoundException:
-        print(f"Document with key '{key}' not found.")
+        if "Customer Id" in record and record["Customer Id"] and str(record["Customer Id"]).strip():
+            key = f"c:{record['Customer Id']}"
+        else:
+            key = f"c:{uuid.uuid4()}"
+            record["key_exception"] = True
+        
+        result = collection.insert(key, record, InsertOptions(timeout=timedelta(seconds=5)))
+        print(f"Inserted document with key: {key}, CAS: {result.cas}")
+    
+    except DocumentExistsException:
+        print(f"Document with key {key} already exists. Skipping.")
     except TimeoutException:
-        print("Operation timed out.")
-    except CouchbaseException as e:
-        print(f"Couchbase error: {e}")
+        print(f"Timeout occurred while inserting document with key {key}. Retrying...")
+        try:
+            result = collection.insert(key, record, InsertOptions(timeout=timedelta(seconds=10)))
+            print(f"Retry successful. Inserted document with key: {key}, CAS: {result.cas}")
+        except Exception as retry_error:
+            print(f"Retry failed for key {key}: {str(retry_error)}")
+    except NetworkException as ne:
+        print(f"Network error occurred while inserting document with key {key}: {str(ne)}")
+    except ValueError as ve:
+        print(f"Value error for key {key}: {str(ve)}. Skipping this record.")
+    except TypeError as te:
+        print(f"Type error for key {key}: {str(te)}. Skipping this record.")
     except Exception as e:
-        print(f"Unexpected error: {e}")
-    finally:
-        end_time = time.time()
-        execution_time = end_time - start_time
-        print(f"Get operation took {execution_time:.6f} seconds")
+        print(f"Unexpected error inserting document with key {key}: {str(e)}")
 
-# subdocument get function for name and timestamp
-def sub_get_airline(key):
-    print("\nGet Result: ")
-    start_time = time.time()
-    try:
-        result = cb_coll.lookup_in(key, [
-            SD.get("name"),
-            SD.get("timestamp")
-        ])
-        print("Name:", result.content_as[str](0))
-        print("Timestamp:", result.content_as[str](1))
-        print("CAS:", result.cas)
-        return result.cas
-    except DocumentNotFoundException:
-        print(f"Document with key '{key}' not found.")
-    except PathNotFoundException:
-        print("One or more paths in the document were not found.")
-    except TimeoutException:
-        print("Operation timed out.")
-    except InvalidArgumentException:
-        print("Invalid argument provided.")
-    except CouchbaseException as e:
-        print(f"Couchbase error: {e}")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-    finally:
-        end_time = time.time()
-        execution_time = end_time - start_time
-        print(f"Get operation took {execution_time:.6f} seconds")
+print("Data insertion complete.")
 
-# subdocument update function for name and timestamp
-def sub_update_airline(key, cbCas, data):
-    print("\nSubDoc Update w/CAS Result: ")
-    start_time = time.time()
-    try:
-        result = cb_coll.mutate_in(key, [
-            SD.upsert("name", data["name"]),
-            SD.upsert("timestamp", data["timestamp"]),
-        ], cas=cbCas)
-        print(result.cas)
-    except DocumentNotFoundException:
-        print(f"Document with key '{key}' not found.")
-    except CasMismatchException:
-        print("The CAS value provided does not match the current document's CAS.")
-    except PathNotFoundException:
-        print("One or more paths in the document were not found.")
-    except DocumentLockedException:
-        print("The document is currently locked.")
-    except TimeoutException:
-        print("Operation timed out.")
-    except InvalidArgumentException:
-        print("Invalid argument provided.")
-    except CouchbaseException as e:
-        print(f"Couchbase error: {e}")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-    finally:
-        end_time = time.time()
-        execution_time = end_time - start_time
-        print(f"Update operation took {execution_time:.6f} seconds")
-
-
-key = "airline_8091"
-doc = {
-    "type": "airline",
-    "id": 8091,
-    "callsign": "CBS",
-    "iata": None,
-    "icao": None,
-    "name": "Couchbase Airways",
-    "timestamp":time.time()
-}
-
-upsert_document(key,doc)
-get_airline_by_key(key)
-cbCas = sub_get_airline(key)
-
-data = {}
-data["name"] = "Couchbase Airways International"
-data["timestamp"] = time.time()
-#update document with new name and timestamp with cas
-sub_update_airline(key, cbCas, data)
-
-#Cleanly close the connection to the Couchbase cluster
-print("\nClosing connection to Couchbase cluster...")
-cluster.close()
-print("Connection closed successfully.")
-
-
-'''
-Common Couchbase Exceptions
-Base Exception
-
-CouchbaseException: The base exception for all Couchbase-specific errors4.
-
-##Network and Timeout Exceptions
-TimeoutException: Raised when an operation times out4.
-
-##Authentication Exceptions
-AuthenticationException: Indicates an error occurred during user authentication4.
-
-##Document Exceptions
-DocumentNotFoundException: Raised when a requested document is not found4.
-DocumentExistsException: Indicates that a document already exists when an operation expected it not to4.
-
-##Durability Exceptions
-DurabilityImpossibleException: Raised when the requested durability requirements cannot be satisfied4.
-DurabilityAmbiguousException: Indicates an ambiguous result for a durable operation4.
-
-##Subdocument Exceptions
-PathNotFoundException: Indicates that a specified path in a subdocument operation doesn't exist4.
-PathExistsException: Raised when a path in a subdocument operation already exists, but the operation expected it not to4.
-
-##Other Exceptions
-CasMismatchException: Raised when there's a conflict in a Compare-And-Swap (CAS) operation4.
-TemporaryFailureException: Indicates a temporary failure, suggesting the operation can be retried4.
-InvalidArgumentException: Raised when an argument provided to an operation is invalid4.
-InternalServerFailureException: Indicates an internal server error4.
-'''
+# Close the Couchbase connection
+if cluster:
+    cluster.close()
+    print("Couchbase connection closed.")

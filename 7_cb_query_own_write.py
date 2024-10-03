@@ -83,10 +83,22 @@ options = QueryOptions(
     scan_consistency=QueryScanConsistency.REQUEST_PLUS,
     timeout=timedelta(seconds=30)
 )
-print("Query Results:")
+print("Query Results w/USE KEYS:")
 try:
     start_time = time.time()
-    query_result = cluster.query("SELECT meta().id, name, timestamp FROM `travel-sample`.`inventory`.`airline` USE KEYS[$cbKey]", options)
+    query_result = cluster.query("SELECT meta().id, meta().cas,name, timestamp FROM `travel-sample`.`inventory`.`airline` USE KEYS[$cbKey]", options)
+    end_time = time.time()
+    query_time = end_time - start_time
+    print(f"Query executed in {query_time:.4f} seconds")
+    for row in query_result:
+        print(row)
+except Exception as e:
+    print(f"An error occurred during the query: {e}")
+
+print("Query Results WHERE name = 'Couchbase Airways'")
+try:
+    start_time = time.time()
+    query_result = cluster.query("SELECT meta().id, meta().cas,name, timestamp FROM `travel-sample`.`inventory`.`airline` WHERE name = 'Couchbase Airways'", options)
     end_time = time.time()
     query_time = end_time - start_time
     print(f"Query executed in {query_time:.4f} seconds")
