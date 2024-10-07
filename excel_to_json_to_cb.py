@@ -64,14 +64,14 @@ try:
     # Uncomment the appropriate section based on the file type you want to process
 
     # Process CSV file
-    #file_md5 = get_file_md5(CSV_FILE)
-    #file_name = os.path.basename(CSV_FILE)
-    #df = pd.read_csv(CSV_FILE)
+    file_md5 = get_file_md5(CSV_FILE)
+    file_name = os.path.basename(CSV_FILE)
+    df = pd.read_csv(CSV_FILE)
     
     # Process Excel file
-    file_md5 = get_file_md5(EXCEL_FILE)
-    file_name = os.path.basename(EXCEL_FILE)
-    df = pd.read_excel(EXCEL_FILE)
+    #file_md5 = get_file_md5(EXCEL_FILE)
+    #file_name = os.path.basename(EXCEL_FILE)
+    #df = pd.read_excel(EXCEL_FILE)
     
     json_data = df.to_json(orient='records')
     records = json.loads(json_data)
@@ -95,15 +95,15 @@ for record in records:
     }
 
     try:
-        '''
+        
         if "Customer Id" in record and record["Customer Id"] and str(record["Customer Id"]).strip():
             key = f"c:{record['Customer Id']}"
         else:
             key = f"c:{uuid.uuid4()}"
             record["key_exception"] = True
-        '''
+        
 
-        key = "r:"+str(uuid.uuid4())
+        #key = "r:"+str(uuid.uuid4())
         
         result = collection.insert(key, record, InsertOptions(timeout=timedelta(seconds=5)))
         print(f"Inserted document with key: {key}, CAS: {result.cas}")
