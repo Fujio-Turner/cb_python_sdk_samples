@@ -158,7 +158,7 @@ def move_numbers_n1ql(key1, key2, amount):
         print(f"Document not found: {e}")
     except InvalidValueException as e:
         print(f"Invalid document value: {e}")
-    except TimeoutException as e:
+    except TimeoutException as e:ß
         print(f"Operation timed out: {e}")
     except TransactionFailed as ex:
         print(f'Transaction did not reach commit point. Error: {ex}')
