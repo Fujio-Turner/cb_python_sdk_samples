@@ -22,7 +22,7 @@ from couchbase.options import ClusterOptions, QueryOptions
 
 # Update this to your cluster
 ENDPOINT = "localhost"
-USERNAME = "demo"
+USERNAME = "Administrator"
 PASSWORD = "password"
 BUCKET_NAME = "travel-sample"
 

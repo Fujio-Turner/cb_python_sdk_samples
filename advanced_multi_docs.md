@@ -10,7 +10,7 @@ from couchbase.auth import PasswordAuthenticator
 from couchbase.options import ClusterOptions
 
 # Connect to the cluster
-cluster = Cluster.connect('couchbase://localhost', ClusterOptions(PasswordAuthenticator('username', 'password')))
+cluster = Cluster.connect('couchbase://localhost', ClusterOptions(PasswordAuthenticator('Administrator', 'password')))
 bucket = cluster.bucket('travel-sample')
 collection = bucket.default_collection()
 

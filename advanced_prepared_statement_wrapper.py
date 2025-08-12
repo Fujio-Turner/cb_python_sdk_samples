@@ -82,7 +82,7 @@ def run_cb_prepared(cb, name, statement, query_parameters=None, retry=3, timeout
                 raise e
 
 # Example usage:
-# cluster = Cluster('couchbase://localhost', ClusterOptions(PasswordAuthenticator('username', 'password')))
+# cluster = Cluster('couchbase://localhost', ClusterOptions(PasswordAuthenticator('Administrator', 'password')))
 # bucket = cluster.bucket('bucket_name')
 # cb = bucket.default_collection()
 # 

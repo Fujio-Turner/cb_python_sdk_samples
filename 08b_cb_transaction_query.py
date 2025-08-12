@@ -60,7 +60,7 @@ from couchbase.exceptions import (
 
 # Update this to your cluster
 ENDPOINT = "localhost"
-USERNAME = "demo"
+USERNAME = "Administrator"
 PASSWORD = "password"
 BUCKET_NAME = "travel-sample"
 CB_SCOPE = "inventory"
@@ -124,7 +124,7 @@ def move_numbers_n1ql(key1, key2, amount):
     def txn_logic(ctx):
         # Perform the first update
         query1 = f"""
-        UPDATE `{bucket_name}`.`{cb_scope}`.`{cb_collection}`
+        UPDATE `{BUCKET_NAME}`.`{CB_SCOPE}`.`{CB_COLLECTION}`
         USE KEYS "{key1}"
         SET stuff = stuff - {amount},
             timestamp = "{datetime.now().isoformat(timespec='milliseconds')}"
@@ -136,7 +136,7 @@ def move_numbers_n1ql(key1, key2, amount):
 
         # Perform the second update
         query2 = f"""
-        UPDATE `{bucket_name}`.`{cb_scope}`.`{cb_collection}`
+        UPDATE `{BUCKET_NAME}`.`{CB_SCOPE}`.`{CB_COLLECTION}`
         USE KEYS "{key2}"
         SET stuff = stuff + {amount},
             timestamp = "{datetime.now().isoformat(timespec='milliseconds')}"
@@ -158,7 +158,7 @@ def move_numbers_n1ql(key1, key2, amount):
         print(f"Document not found: {e}")
     except InvalidValueException as e:
         print(f"Invalid document value: {e}")
-    except TimeoutException as e:ß
+    except TimeoutException as e:
         print(f"Operation timed out: {e}")
     except TransactionFailed as ex:
         print(f'Transaction did not reach commit point. Error: {ex}')

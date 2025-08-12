@@ -28,7 +28,7 @@ import json
 
 # Couchbase connection parameters
 CB_HOST = "localhost"
-CB_USER = "demo"
+CB_USER = "Administrator"
 CB_PASS = "password"
 CB_BUCKET = "example"
 CB_SCOPE = "_default"

@@ -34,7 +34,7 @@ import couchbase.subdocument as SD
 
 # Update this to your cluster
 ENDPOINT = "localhost"
-USERNAME = "demo"
+USERNAME = "Administrator"
 PASSWORD = "password"
 BUCKET_NAME = "travel-sample"
 CB_SCOPE = "inventory"
