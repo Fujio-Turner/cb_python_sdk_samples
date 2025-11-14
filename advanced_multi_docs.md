@@ -1,18 +1,36 @@
 # Couchbase Python SDK Multi Operations Examples
 
-## Multi-Get Operations
+This document demonstrates batch operations for improved performance when working with multiple documents simultaneously. Multi operations reduce network round-trips and improve throughput.
 
-### get_multi
+## Benefits of Multi Operations
+- **Reduced Network Overhead**: Single request for multiple documents
+- **Better Throughput**: Batch operations are more efficient
+- **Simplified Code**: Handle multiple operations in one call
+- **Performance**: Especially beneficial for high-volume applications
+
+## Connection Setup
 
 ```python
 from couchbase.cluster import Cluster
 from couchbase.auth import PasswordAuthenticator
 from couchbase.options import ClusterOptions
 
+# For local/self-hosted Couchbase Server:
+ENDPOINT = "localhost"
+USERNAME = "Administrator"
+PASSWORD = "password"
+
 # Connect to the cluster
-cluster = Cluster.connect('couchbase://localhost', ClusterOptions(PasswordAuthenticator('Administrator', 'password')))
+auth = PasswordAuthenticator(USERNAME, PASSWORD)
+options = ClusterOptions(auth)
+cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+
+# For Capella (cloud), use this instead:
+# options.apply_profile('wan_development')
+# cluster = Cluster(f'couchbases://{ENDPOINT}', options)
+
 bucket = cluster.bucket('travel-sample')
-collection = bucket.default_collection()
+collection = bucket.default_collection()  # Or use scope/collection
 
 # Perform multi-get operation
 keys = ['airline_10', 'airline_11', 'airline_12']
@@ -140,5 +158,78 @@ for key, value in result.results.items():
     print(f"Key: {key}, CAS: {value.cas}")
 ```
 
-These examples demonstrate how to use the multi operations in the Python Couchbase SDK. 
-Remember to handle exceptions and implement proper error checking in your production code.
+## Error Handling Best Practices
+
+Multi operations return a result object with individual results for each key. Always check for failures:
+
+```python
+from couchbase.exceptions import CouchbaseException
+
+# Example with error handling
+keys = ['doc1', 'doc2', 'doc3']
+try:
+    result = collection.get_multi(keys)
+    
+    # Check each result
+    for key, res in result.results.items():
+        if res.success:
+            print(f"✓ {key}: {res.content_as[dict]}")
+        else:
+            print(f"✗ {key}: Failed - {res.exception}")
+            
+except CouchbaseException as e:
+    print(f"Multi-operation failed: {e}")
+```
+
+## Performance Considerations
+
+1. **Batch Size**: 
+   - Optimal batch size: 100-1000 documents
+   - Larger batches may hit network limits
+   - Split very large operations into chunks
+
+2. **Network Limits**:
+   - Total request size should be reasonable (< 10MB)
+   - Consider document size when batching
+
+3. **Parallel Processing**:
+   - Multi operations are inherently parallel
+   - Better than looping with individual operations
+   - For even higher throughput, consider async operations (see `11_cb_async_operations.py`)
+
+## When to Use Multi Operations
+
+✅ **Good Use Cases:**
+- Fetching related documents together
+- Bulk inserts/updates
+- Batch deletions
+- Consistent subdocument operations across multiple docs
+
+❌ **Avoid When:**
+- Documents are unrelated (may cause unnecessary blocking)
+- Individual operations need different options/timeouts
+- Very large batches (split into smaller chunks)
+- Operations require different consistency guarantees
+
+## Related Examples
+
+- **11_cb_async_operations.py** - Async multi-document operations
+- **05_cb_exception_handling.py** - Error handling patterns
+- **excel_to_json_to_cb.py** - Bulk import example
+
+## Additional Notes
+
+- Multi operations are atomic per-document, not across documents
+- For cross-document atomicity, use transactions (see `08a_cb_transaction_kv.py`)
+- Results maintain insertion order in most cases
+- Failed operations don't stop other operations in the batch
+
+## Resources
+
+- [Couchbase Python SDK Documentation](https://docs.couchbase.com/python-sdk/current/howtos/kv-operations.html)
+- [Bulk Operations Guide](https://docs.couchbase.com/python-sdk/current/howtos/concurrent-async-apis.html)
+- [Performance Best Practices](https://docs.couchbase.com/python-sdk/current/concept-docs/performance.html)
+
+---
+
+These examples demonstrate how to use multi operations in the Couchbase Python SDK. Remember to handle exceptions and implement proper error checking in production code.

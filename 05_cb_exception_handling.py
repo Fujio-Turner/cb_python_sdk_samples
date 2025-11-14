@@ -18,7 +18,14 @@ from couchbase.cluster import Cluster
 from couchbase.options import ClusterOptions
 from couchbase.auth import PasswordAuthenticator
 from couchbase.options import InsertOptions
-from couchbase.exceptions import DocumentExistsException, TimeoutException, NetworkException
+from couchbase.exceptions import (
+    DocumentExistsException, 
+    DocumentNotFoundException,
+    TimeoutException, 
+    ServiceUnavailableException,
+    ParsingFailedException,
+    CouchbaseException
+)
 import json
 import time
 import hashlib
@@ -30,7 +37,7 @@ import uuid
 CB_HOST = "localhost"
 CB_USER = "Administrator"
 CB_PASS = "password"
-CB_BUCKET = "example"
+CB_BUCKET = "travel-sample"  # Change to your bucket name
 CB_SCOPE = "_default"
 CB_COLLECTION = "_default"
 
@@ -113,8 +120,8 @@ for record in records:
             print(f"Retry successful. Inserted document with key: {key}, CAS: {result.cas}")
         except Exception as retry_error:
             print(f"Retry failed for key {key}: {str(retry_error)}")
-    except NetworkException as ne:
-        print(f"Network error occurred while inserting document with key {key}: {str(ne)}")
+    except ServiceUnavailableException as ne:
+        print(f"Service unavailable error occurred while inserting document with key {key}: {str(ne)}")
     except ValueError as ve:
         print(f"Value error for key {key}: {str(ve)}. Skipping this record.")
     except TypeError as te:
@@ -124,7 +131,116 @@ for record in records:
 
 print("Data insertion complete.")
 
+# Example 1: Handle DocumentNotFoundException - Get a document that doesn't exist
+print("\n--- Example 1: Handling DocumentNotFoundException ---")
+try:
+    result = collection.get("does_not_exist")
+    print(f"Document found: {result.content}")
+except DocumentNotFoundException as e:
+    print(f"Document not found (expected): Key 'does_not_exist' does not exist in the collection")
+except CouchbaseException as e:
+    print(f"Couchbase error: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+
+# Example 2: Handle ParsingFailedException - Bad query syntax
+print("\n--- Example 2: Handling ParsingFailedException (Bad Query) ---")
+try:
+    # Intentionally bad query - missing FROM clause
+    bad_query = "SELECT * WHERE type = 'airline'"
+    result = cluster.query(bad_query)
+    for row in result:
+        print(row)
+except ParsingFailedException as e:
+    print(f"Query parsing error (expected): Invalid query syntax")
+    print(f"Details: {e}")
+except CouchbaseException as e:
+    print(f"Couchbase error: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+
+# Example 3: Handle query with non-existent bucket
+print("\n--- Example 3: Handling Query with Non-Existent Bucket ---")
+try:
+    query = "SELECT * FROM `non_existent_bucket` LIMIT 1"
+    result = cluster.query(query)
+    for row in result:
+        print(row)
+except CouchbaseException as e:
+    print(f"Query error (expected): Bucket or keyspace not found")
+    print(f"Details: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+
+# Example 4: Demonstrate proper exception handling with get and default value
+print("\n--- Example 4: Get with Default Value Pattern ---")
+def get_document_or_default(collection, key, default=None):
+    """
+    Get a document from Couchbase, return default value if not found.
+    """
+    try:
+        result = collection.get(key)
+        return result.content_as[dict]
+    except DocumentNotFoundException:
+        print(f"Document '{key}' not found, returning default value")
+        return default
+    except TimeoutException:
+        print(f"Timeout getting document '{key}'")
+        return default
+    except CouchbaseException as e:
+        print(f"Couchbase error getting '{key}': {e}")
+        return default
+
+# Test the helper function
+doc = get_document_or_default(collection, "does_not_exist", {"default": True})
+print(f"Returned value: {doc}")
+
+# Example 5: Handle CAS mismatch (optimistic locking)
+print("\n--- Example 5: Handling CAS Mismatch (Optimistic Locking) ---")
+try:
+    from couchbase.exceptions import CASMismatchException
+    from couchbase.options import ReplaceOptions
+    
+    # Create a test document
+    test_key = "test_cas_doc"
+    test_doc = {"value": "original", "counter": 0}
+    
+    try:
+        collection.upsert(test_key, test_doc)
+        print(f"Created test document: {test_key}")
+        
+        # Get the document with CAS
+        result1 = collection.get(test_key)
+        cas1 = result1.cas
+        
+        # Simulate another process updating the document
+        collection.replace(test_key, {"value": "updated by another process", "counter": 1})
+        
+        # Try to update with old CAS (this will fail)
+        try:
+            collection.replace(
+                test_key, 
+                {"value": "my update", "counter": 2},
+                ReplaceOptions(cas=cas1)
+            )
+            print("Update succeeded (unexpected)")
+        except CASMismatchException:
+            print("CAS mismatch detected (expected): Document was modified by another process")
+            print("In production, you would typically retry the operation with fresh data")
+            
+    finally:
+        # Cleanup test document
+        try:
+            collection.remove(test_key)
+        except:
+            pass
+            
+except Exception as e:
+    print(f"Error in CAS example: {e}")
+
+print("\n--- Exception Handling Examples Complete ---")
+
 # Close the Couchbase connection
 if cluster:
     cluster.close()
-    print("Couchbase connection closed.")
+    print("\nCouchbase connection closed.")

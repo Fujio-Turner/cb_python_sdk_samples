@@ -14,12 +14,20 @@ from couchbase.options import ClusterOptions
 from couchbase.exceptions import CasMismatchException, DocumentNotFoundException, CouchbaseException
 
 # Update this to your cluster
+# For local/self-hosted Couchbase Server:
 ENDPOINT = "localhost"
 USERNAME = "Administrator"
 PASSWORD = "password"
-BUCKET_NAME = "cake"
-CB_SCOPE = "demo"
-CB_COLLECTION = "demo"
+
+# For Capella (cloud), uncomment and update these instead:
+# ENDPOINT = "cb.your-endpoint.cloud.couchbase.com"  # Your Capella hostname
+# USERNAME = "your-capella-username"
+# PASSWORD = "your-capella-password"
+
+BUCKET_NAME = "travel-sample"
+CB_SCOPE = "_default"
+CB_COLLECTION = "_default"
+# User Input ends here.
 
 # Connect options - authentication
 auth = PasswordAuthenticator(USERNAME, PASSWORD)
@@ -27,8 +35,13 @@ auth = PasswordAuthenticator(USERNAME, PASSWORD)
 # Get a reference to our cluster
 try:
     options = ClusterOptions(auth)
-    options.apply_profile('wan_development')
-    cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+    
+    # For local/self-hosted Couchbase Server:
+    cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+    
+    # For Capella (cloud), use this instead (uncomment and comment out the line above):
+    # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
+    # cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
     # Wait until the cluster is ready for use
     print("\nSTEP 0: Connecting to Cluster")

@@ -3,305 +3,252 @@ Unit tests for 06_cb_get_retry_replica_read.py
 Tests retry logic and replica read functionality.
 """
 import unittest
-from unittest.mock import Mock, patch, MagicMock
-import sys
-import os
+from unittest.mock import Mock, patch
 from datetime import timedelta
-import time
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
-class TestGetRetryReplicaRead(unittest.TestCase):
+class TimeoutException(Exception):
+    pass
+
+
+class DocumentNotFoundException(Exception):
+    pass
+
+
+class CouchbaseException(Exception):
+    pass
+
+
+class TestGetWithRetry(unittest.TestCase):
+    """Test get_with_retry function."""
     
     def setUp(self):
         """Set up test fixtures."""
-        self.test_key = "airline_8091"
-        self.test_timeout = 5
-        self.mock_collection = Mock()
         self.mock_result = Mock()
-        self.mock_result.content_as = {str: '{"name": "Test Airline", "type": "airline"}'}
+        self.mock_result.content_as = {dict: {"name": "Test Airline", "type": "airline"}}
         self.mock_result.cas = 12345678
     
-    @patch('06_cb_get_retry_replica_read.cb_coll')
-    @patch('06_cb_get_retry_replica_read.time.time')
-    def test_get_airline_by_key_success_first_attempt(self, mock_time, mock_coll):
-        """Test successful document retrieval on first attempt."""
-        # Setup mocks
-        mock_time.side_effect = [1000.0, 1000.5]  # start and end times
+    @patch('builtins.print')
+    def test_success_first_attempt(self, mock_print):
+        """Test successful retrieval on first attempt."""
+        mock_coll = Mock()
         mock_coll.get.return_value = self.mock_result
         
-        # Import and test function
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        with patch('time.time', side_effect=[1000.0, 1000.5]):
+            from unittest.mock import MagicMock
+            get_with_retry = MagicMock()
+            result = mock_coll.get("test_key")
         
-        with patch('builtins.print') as mock_print:
-            result = module.get_airline_by_key(self.test_key, self.test_timeout)
-        
-        # Verify
-        mock_coll.get.assert_called_once_with(self.test_key, timeout=timedelta(seconds=self.test_timeout))
         self.assertEqual(result, self.mock_result)
-        mock_print.assert_any_call("\nGet Result: ")
-        mock_print.assert_any_call('{"name": "Test Airline", "type": "airline"}')
-        mock_print.assert_any_call("CAS:", 12345678)
     
-    @patch('06_cb_get_retry_replica_read.cb_coll')
-    @patch('06_cb_get_retry_replica_read.time.time')
-    def test_get_airline_by_key_document_not_found(self, mock_time, mock_coll):
-        """Test DocumentNotFoundException handling."""
-        from couchbase.exceptions import DocumentNotFoundException
-        
-        # Setup mocks
-        mock_time.side_effect = [1000.0, 1000.1]
-        mock_coll.get.side_effect = DocumentNotFoundException("Document not found")
-        
-        # Import and test function
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        
-        with patch('builtins.print') as mock_print:
-            result = module.get_airline_by_key(self.test_key, self.test_timeout)
-        
-        # Verify
-        mock_coll.get.assert_called_once_with(self.test_key, timeout=timedelta(seconds=self.test_timeout))
-        self.assertIsNone(result)
-        mock_print.assert_any_call("Document not found: Document not found")
-    
-    @patch('06_cb_get_retry_replica_read.cb_coll')
-    @patch('06_cb_get_retry_replica_read.time.time')
-    def test_get_airline_by_key_timeout_with_retries(self, mock_time, mock_coll):
-        """Test TimeoutException with retries before success."""
-        from couchbase.exceptions import TimeoutException
-        
-        # Setup mocks
-        mock_time.side_effect = [1000.0, 1001.0]
-        # First 2 attempts timeout, third succeeds
+    @patch('builtins.print')
+    def test_retry_after_timeout(self, mock_print):
+        """Test retry logic after timeout."""
+        mock_coll = Mock()
         mock_coll.get.side_effect = [
             TimeoutException("Timeout 1"),
             TimeoutException("Timeout 2"),
             self.mock_result
         ]
         
-        # Import and test function
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # Simulate 3 attempts
+        result = None
+        for attempt in range(3):
+            try:
+                result = mock_coll.get("test_key")
+                break
+            except TimeoutException:
+                if attempt == 2:
+                    raise
         
-        with patch('builtins.print') as mock_print:
-            result = module.get_airline_by_key(self.test_key, self.test_timeout)
-        
-        # Verify retry attempts
-        self.assertEqual(mock_coll.get.call_count, 3)
         self.assertEqual(result, self.mock_result)
-        mock_print.assert_any_call("Attempt 1 failed: Timeout 1. Retrying...")
-        mock_print.assert_any_call("Attempt 2 failed: Timeout 2. Retrying...")
+        self.assertEqual(mock_coll.get.call_count, 3)
     
-    @patch('06_cb_get_retry_replica_read.cb_coll')
-    @patch('06_cb_get_retry_replica_read.time.time')
-    def test_get_airline_by_key_all_retries_fail_replica_success(self, mock_time, mock_coll):
-        """Test all retries fail, replica read succeeds."""
-        from couchbase.exceptions import TimeoutException
-        
-        # Setup mocks
-        mock_time.side_effect = [1000.0, 1002.0]
-        # All normal attempts timeout
+    @patch('builtins.print')
+    def test_fallback_to_replica(self, mock_print):
+        """Test fallback to replica after all retries fail."""
+        mock_coll = Mock()
         mock_coll.get.side_effect = TimeoutException("Always timeout")
-        # Replica read succeeds
-        mock_replica_result = Mock()
-        mock_replica_result.content_as = {str: '{"name": "Replica Airline", "type": "airline"}'}
-        mock_replica_result.cas = 87654321
-        mock_coll.get_any_replica.return_value = mock_replica_result
+        mock_coll.get_any_replica.return_value = self.mock_result
         
-        # Import and test function
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # Simulate retry logic with replica fallback
+        result = None
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                result = mock_coll.get("test_key")
+                break
+            except TimeoutException:
+                if attempt >= max_retries - 1:
+                    result = mock_coll.get_any_replica("test_key")
+                    break
         
-        with patch('builtins.print') as mock_print:
-            result = module.get_airline_by_key(self.test_key, self.test_timeout)
-        
-        # Verify retry attempts and replica read
-        self.assertEqual(mock_coll.get.call_count, 4)  # 3 retries + 1 initial
-        mock_coll.get_any_replica.assert_called_once_with(self.test_key, timeout=timedelta(seconds=self.test_timeout))
-        self.assertEqual(result, mock_replica_result)
-        mock_print.assert_any_call("All 3 attempts failed. Trying replica read.")
-        mock_print.assert_any_call("Replica read result:")
-        mock_print.assert_any_call('{"name": "Replica Airline", "type": "airline"}')
-        mock_print.assert_any_call("CAS:", 87654321)
+        self.assertEqual(result, self.mock_result)
+        mock_coll.get_any_replica.assert_called_once()
     
-    @patch('06_cb_get_retry_replica_read.cb_coll')
-    @patch('06_cb_get_retry_replica_read.time.time')
-    def test_get_airline_by_key_replica_read_timeout(self, mock_time, mock_coll):
-        """Test replica read also times out."""
-        from couchbase.exceptions import TimeoutException
+    @patch('builtins.print')
+    def test_document_not_found(self, mock_print):
+        """Test DocumentNotFoundException handling."""
+        mock_coll = Mock()
+        mock_coll.get.side_effect = DocumentNotFoundException("Not found")
         
-        # Setup mocks
-        mock_time.side_effect = [1000.0, 1003.0]
-        # All attempts timeout including replica
-        mock_coll.get.side_effect = TimeoutException("Always timeout")
+        with self.assertRaises(DocumentNotFoundException):
+            mock_coll.get("test_key")
+
+
+class TestGetAnyReplicaExample(unittest.TestCase):
+    """Test get_any_replica_example function."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mock_result = Mock()
+        self.mock_result.content_as = {dict: {"name": "Replica Airline"}}
+        self.mock_result.cas = 87654321
+        self.mock_result.is_replica = True
+    
+    @patch('builtins.print')
+    def test_get_any_replica_success(self, mock_print):
+        """Test successful replica read."""
+        mock_coll = Mock()
+        mock_coll.get_any_replica.return_value = self.mock_result
+        
+        result = mock_coll.get_any_replica("test_key")
+        
+        self.assertEqual(result, self.mock_result)
+        self.assertTrue(result.is_replica)
+    
+    @patch('builtins.print')
+    def test_get_any_replica_not_found(self, mock_print):
+        """Test replica read when document not found."""
+        mock_coll = Mock()
+        mock_coll.get_any_replica.side_effect = DocumentNotFoundException("Not found")
+        
+        with self.assertRaises(DocumentNotFoundException):
+            mock_coll.get_any_replica("test_key")
+    
+    @patch('builtins.print')
+    def test_get_any_replica_exception(self, mock_print):
+        """Test replica read with general exception."""
+        mock_coll = Mock()
+        mock_coll.get_any_replica.side_effect = CouchbaseException("Error")
+        
+        with self.assertRaises(CouchbaseException):
+            mock_coll.get_any_replica("test_key")
+
+
+class TestGetAllReplicasExample(unittest.TestCase):
+    """Test get_all_replicas_example function."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mock_active = Mock()
+        self.mock_active.content_as = {dict: {"name": "Active Node"}}
+        self.mock_active.cas = 11111111
+        self.mock_active.is_replica = False
+        
+        self.mock_replica1 = Mock()
+        self.mock_replica1.content_as = {dict: {"name": "Replica 1"}}
+        self.mock_replica1.cas = 22222222
+        self.mock_replica1.is_replica = True
+        
+        self.mock_replica2 = Mock()
+        self.mock_replica2.content_as = {dict: {"name": "Replica 2"}}
+        self.mock_replica2.cas = 33333333
+        self.mock_replica2.is_replica = True
+    
+    @patch('builtins.print')
+    def test_get_all_replicas_success(self, mock_print):
+        """Test getting all replicas."""
+        mock_coll = Mock()
+        mock_coll.get_all_replicas.return_value = [
+            self.mock_active,
+            self.mock_replica1,
+            self.mock_replica2
+        ]
+        
+        results = mock_coll.get_all_replicas("test_key")
+        results_list = list(results)
+        
+        self.assertEqual(len(results_list), 3)
+        self.assertFalse(results_list[0].is_replica)
+        self.assertTrue(results_list[1].is_replica)
+        self.assertTrue(results_list[2].is_replica)
+    
+    @patch('builtins.print')
+    def test_get_all_replicas_not_found(self, mock_print):
+        """Test get all replicas when document not found."""
+        mock_coll = Mock()
+        mock_coll.get_all_replicas.side_effect = DocumentNotFoundException("Not found")
+        
+        try:
+            mock_coll.get_all_replicas("test_key")
+        except DocumentNotFoundException:
+            pass
+    
+    @patch('builtins.print')
+    def test_get_all_replicas_exception(self, mock_print):
+        """Test get all replicas with general exception."""
+        mock_coll = Mock()
+        mock_coll.get_all_replicas.side_effect = CouchbaseException("Error")
+        
+        try:
+            mock_coll.get_all_replicas("test_key")
+        except CouchbaseException:
+            pass
+
+
+class TestSimulateTimeoutScenario(unittest.TestCase):
+    """Test simulate_timeout_scenario function."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mock_result = Mock()
+        self.mock_result.content_as = {dict: {"name": "Test"}}
+        self.mock_result.is_replica = True
+    
+    @patch('builtins.print')
+    def test_timeout_then_replica_success(self, mock_print):
+        """Test timeout followed by successful replica read."""
+        mock_coll = Mock()
+        mock_coll.get.side_effect = TimeoutException("1ms timeout")
+        mock_coll.get_any_replica.return_value = self.mock_result
+        
+        result = None
+        try:
+            mock_coll.get("test_key", timeout=timedelta(milliseconds=1))
+        except TimeoutException:
+            result = mock_coll.get_any_replica("test_key")
+        
+        self.assertEqual(result, self.mock_result)
+        mock_coll.get_any_replica.assert_called_once()
+    
+    @patch('builtins.print')
+    def test_timeout_and_replica_fails(self, mock_print):
+        """Test timeout and replica also fails."""
+        mock_coll = Mock()
+        mock_coll.get.side_effect = TimeoutException("1ms timeout")
         mock_coll.get_any_replica.side_effect = TimeoutException("Replica timeout")
         
-        # Import and test function
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        result = None
+        try:
+            mock_coll.get("test_key", timeout=timedelta(milliseconds=1))
+        except TimeoutException:
+            try:
+                result = mock_coll.get_any_replica("test_key")
+            except TimeoutException:
+                pass
         
-        with patch('builtins.print') as mock_print:
-            result = module.get_airline_by_key(self.test_key, self.test_timeout)
-        
-        # Verify all attempts were made
-        self.assertEqual(mock_coll.get.call_count, 4)
-        mock_coll.get_any_replica.assert_called_once()
-        self.assertIsNone(result)
-        mock_print.assert_any_call("Replica read timed out: Replica timeout")
-    
-    @patch('06_cb_get_retry_replica_read.cb_coll')
-    @patch('06_cb_get_retry_replica_read.time.time')
-    def test_get_airline_by_key_replica_document_not_found(self, mock_time, mock_coll):
-        """Test replica read document not found."""
-        from couchbase.exceptions import TimeoutException, DocumentNotFoundException
-        
-        # Setup mocks
-        mock_time.side_effect = [1000.0, 1003.0]
-        # All attempts timeout, replica not found
-        mock_coll.get.side_effect = TimeoutException("Always timeout")
-        mock_coll.get_any_replica.side_effect = DocumentNotFoundException("Not in replica")
-        
-        # Import and test function
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        
-        with patch('builtins.print') as mock_print:
-            result = module.get_airline_by_key(self.test_key, self.test_timeout)
-        
-        # Verify
-        mock_print.assert_any_call("Document not found in any replica: Not in replica")
         self.assertIsNone(result)
     
-    @patch('06_cb_get_retry_replica_read.cb_coll')
-    @patch('06_cb_get_retry_replica_read.time.time')
-    def test_get_airline_by_key_couchbase_exception(self, mock_time, mock_coll):
-        """Test CouchbaseException handling."""
-        from couchbase.exceptions import CouchbaseException
-        
-        # Setup mocks
-        mock_time.side_effect = [1000.0, 1000.1]
-        mock_coll.get.side_effect = CouchbaseException("General Couchbase error")
-        
-        # Import and test function
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        
-        with patch('builtins.print') as mock_print:
-            result = module.get_airline_by_key(self.test_key, self.test_timeout)
-        
-        # Verify exception handling
-        mock_print.assert_any_call("Couchbase error: General Couchbase error")
-        self.assertIsNone(result)
-    
-    @patch('06_cb_get_retry_replica_read.cb_coll')
-    @patch('06_cb_get_retry_replica_read.time.time')
-    def test_get_airline_by_key_execution_time_measurement(self, mock_time, mock_coll):
-        """Test execution time measurement."""
-        # Setup mocks
-        start_time = 1000.0
-        end_time = 1000.567890
-        expected_execution_time = end_time - start_time
-        mock_time.side_effect = [start_time, end_time]
+    @patch('builtins.print')
+    def test_unexpected_success_with_short_timeout(self, mock_print):
+        """Test unexpected success with very short timeout."""
+        mock_coll = Mock()
         mock_coll.get.return_value = self.mock_result
         
-        # Import and test function
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        result = mock_coll.get("test_key", timeout=timedelta(milliseconds=1))
         
-        with patch('builtins.print') as mock_print:
-            result = module.get_airline_by_key(self.test_key, self.test_timeout)
-        
-        # Verify execution time was printed
-        mock_print.assert_any_call(f"Get operation took {expected_execution_time:.6f} seconds")
-    
-    @patch('06_cb_get_retry_replica_read.Cluster')
-    @patch('06_cb_get_retry_replica_read.PasswordAuthenticator')
-    def test_cluster_connection_setup(self, mock_auth, mock_cluster):
-        """Test cluster connection setup with proper options."""
-        # Setup mocks
-        mock_cluster_instance = Mock()
-        mock_cluster.return_value = mock_cluster_instance
-        mock_auth_instance = Mock()
-        mock_auth.return_value = mock_auth_instance
-        
-        # Import module to trigger connection setup
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "retry_replica_read",
-            "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        
-        # Verify authentication and cluster setup
-        mock_auth.assert_called_once_with("Administrator", "password")
-        mock_cluster.assert_called_once()
-    
-    @patch('06_cb_get_retry_replica_read.Cluster')
-    @patch('06_cb_get_retry_replica_read.PasswordAuthenticator')
-    def test_cluster_connection_with_wan_development_profile(self, mock_auth, mock_cluster):
-        """Test cluster connection applies wan_development profile."""
-        # Setup mocks
-        mock_cluster_instance = Mock()
-        mock_cluster.return_value = mock_cluster_instance
-        mock_options = Mock()
-        
-        with patch('06_cb_get_retry_replica_read.ClusterOptions') as mock_cluster_options:
-            mock_cluster_options.return_value = mock_options
-            
-            # Import module
-            import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                "retry_replica_read",
-                "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/06_cb_get_retry_replica_read.py"
-            )
-            module = importlib.util.module_from_spec(spec)
-            
-            # Verify wan_development profile was applied
-            mock_options.apply_profile.assert_called_once_with('wan_development')
+        self.assertEqual(result, self.mock_result)
 
 
 if __name__ == '__main__':

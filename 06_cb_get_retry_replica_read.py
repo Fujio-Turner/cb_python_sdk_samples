@@ -1,16 +1,19 @@
 """
-Retrieves an airline document from a Couchbase cluster, with retry logic and replica read support.
+Demonstrates reading from replica nodes in Couchbase for high availability scenarios.
 
-This function takes a document key as input and attempts to retrieve the corresponding 
-document from the Couchbase cluster. If the initial retrieval fails due to a timeout, 
-it will retry up to 3 times. If all retries fail, it will attempt to retrieve the document from a replica.
+This script shows how to use replica reads to maintain data availability even when
+the active node is unreachable or experiencing timeouts. Replica reads are useful for:
+- High availability: Access data even if the active node is down
+- Load balancing: Distribute read traffic across replica nodes
+- Disaster recovery: Failover to replicas during outages
+- Performance: Reduce latency by reading from geographically closer replicas
 
-Args:
-    key (str): The key of the document to retrieve.
-    timeout (int): The timeout in seconds for the document retrieval operation.
+Key functions demonstrated:
+1. get() - Standard read from active node with retry logic
+2. get_any_replica() - Read from any available replica (fastest response)
+3. get_all_replicas() - Read from all replicas (compare data across nodes)
 
-Returns:
-    couchbase.result.GetResult: The retrieved document, or None if the document could not be found.
+Note: Replicas may have slightly stale data due to replication lag.
 """
 from datetime import timedelta
 import time
@@ -31,9 +34,16 @@ from couchbase.exceptions import (
 )
 
 # Update this to your cluster
+# For local/self-hosted Couchbase Server:
 ENDPOINT = "localhost"
 USERNAME = "Administrator"
 PASSWORD = "password"
+
+# For Capella (cloud), uncomment and update these instead:
+# ENDPOINT = "cb.your-endpoint.cloud.couchbase.com"  # Your Capella hostname
+# USERNAME = "your-capella-username"
+# PASSWORD = "your-capella-password"
+
 BUCKET_NAME = "travel-sample"
 CB_SCOPE = "inventory"
 CB_COLLECTION = "airline"
@@ -42,13 +52,16 @@ CB_COLLECTION = "airline"
 try:
     # Connect options - authentication
     auth = PasswordAuthenticator(USERNAME, PASSWORD)
+    
     # get a reference to our cluster
     options = ClusterOptions(auth)
-    # Sets a pre-configured profile called "wan_development" to help avoid latency issues
-    # when accessing Capella from a different Wide Area Network
-    # or Availability Zone(e.g. your laptop).
-    options.apply_profile('wan_development')
-    cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)
+    
+    # For local/self-hosted Couchbase Server:
+    cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+    
+    # For Capella (cloud), use this instead (uncomment and comment out the line above):
+    # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
+    # cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
     # Wait until the cluster is ready for use.
     cluster.wait_until_ready(timedelta(seconds=10))
@@ -68,54 +81,159 @@ except CouchbaseException as e:
     print(f"Couchbase error: {e}")
 
 
-# get document function
-def get_airline_by_key(key, timeout=5):
-    print("\nGet Result: ")
+# Example 1: Normal get with retry logic
+def get_with_retry(key, timeout=5, max_retries=3):
+    """
+    Get a document with retry logic, falling back to replica read if all retries fail.
+    """
+    print(f"\n--- Example 1: Get '{key}' with Retry Logic ---")
     start_time = time.time()
-    retries = 3
     result = None
 
-    for attempt in range(retries + 1):
+    for attempt in range(max_retries):
         try:
             result = cb_coll.get(key, timeout=timedelta(seconds=timeout))
-            print(result.content_as[str])
-            print("CAS:", result.cas)
+            print(f"✓ Successfully retrieved from active node")
+            print(f"  Content: {result.content_as[dict]}")
+            print(f"  CAS: {result.cas}")
             break
         except DocumentNotFoundException as e:
-            print(f"Document not found: {e}")
+            print(f"✗ Document not found: {key}")
             break
-        except (TimeoutException) as e:
-            if attempt < retries:
-                print(f"Attempt {attempt + 1} failed: {e}. Retrying...")
+        except TimeoutException as e:
+            if attempt < max_retries - 1:
+                print(f"  Attempt {attempt + 1}/{max_retries} timed out, retrying...")
             else:
-                print(f"All {retries} attempts failed. Trying replica read.")
+                print(f"✗ All {max_retries} attempts timed out. Trying replica read...")
                 try:
                     result = cb_coll.get_any_replica(key, timeout=timedelta(seconds=timeout))
-                    print("Replica read result:")
-                    print(result.content_as[str])
-                    print("CAS:", result.cas)
-                except DocumentNotFoundException as e:
-                    print(f"Document not found in any replica: {e}")
-                except TimeoutException as e:
-                    print(f"Replica read timed out: {e}")
-                except CouchbaseException as e:
-                    print(f"Couchbase error during replica read: {e}")
+                    print(f"✓ Successfully retrieved from replica")
+                    print(f"  Content: {result.content_as[dict]}")
+                    print(f"  CAS: {result.cas}")
+                    print(f"  Note: Data may be slightly stale due to replication lag")
+                except Exception as replica_error:
+                    print(f"✗ Replica read also failed: {replica_error}")
         except CouchbaseException as e:
-            print(f"Couchbase error: {e}")
+            print(f"✗ Couchbase error: {e}")
             break
-    else:
-        print("All attempts failed, including replica read.")
 
     end_time = time.time()
-    execution_time = end_time - start_time
-    print(f"Get operation took {execution_time:.6f} seconds")
+    print(f"  Total time: {end_time - start_time:.3f}s")
     return result
 
-# query for new document by callsign
 
-key = "airline_8091"
-# get document function with timeout set to 5 seconds
-get_airline_by_key(key,5)
+# Example 2: Read from any replica (fastest response)
+def get_any_replica_example(key):
+    """
+    Get document from any available replica - returns fastest response.
+    Useful for load balancing and high availability.
+    """
+    print(f"\n--- Example 2: Get '{key}' from Any Replica ---")
+    start_time = time.time()
+    
+    try:
+        result = cb_coll.get_any_replica(key)
+        print(f"✓ Retrieved from replica (fastest available)")
+        print(f"  Content: {result.content_as[dict]}")
+        print(f"  CAS: {result.cas}")
+        print(f"  is_replica: {result.is_replica}")
+        end_time = time.time()
+        print(f"  Time: {end_time - start_time:.3f}s")
+        return result
+    except DocumentNotFoundException:
+        print(f"✗ Document '{key}' not found in any replica")
+    except CouchbaseException as e:
+        print(f"✗ Error: {e}")
+    
+    return None
+
+
+# Example 3: Read from all replicas (compare across nodes)
+def get_all_replicas_example(key):
+    """
+    Get document from all replicas - useful for comparing data consistency.
+    Returns an iterable of results from active + all replica nodes.
+    """
+    print(f"\n--- Example 3: Get '{key}' from All Replicas ---")
+    start_time = time.time()
+    
+    try:
+        results = cb_coll.get_all_replicas(key)
+        replica_count = 0
+        active_count = 0
+        
+        for idx, result in enumerate(results, 1):
+            if result.is_replica:
+                replica_count += 1
+                print(f"  Replica {replica_count}:")
+            else:
+                active_count += 1
+                print(f"  Active node:")
+            
+            print(f"    CAS: {result.cas}")
+            print(f"    Content: {result.content_as[dict]}")
+        
+        total_nodes = active_count + replica_count
+        end_time = time.time()
+        print(f"✓ Retrieved from {total_nodes} nodes ({active_count} active, {replica_count} replica)")
+        print(f"  Total time: {end_time - start_time:.3f}s")
+        
+    except DocumentNotFoundException:
+        print(f"✗ Document '{key}' not found")
+    except CouchbaseException as e:
+        print(f"✗ Error: {e}")
+
+
+# Example 4: Simulate timeout scenario with very aggressive timeout
+def simulate_timeout_scenario(key):
+    """
+    Simulate timeout by using extremely short timeout, demonstrating replica fallback.
+    """
+    print(f"\n--- Example 4: Simulate Timeout with Replica Fallback ---")
+    print("  Using 1ms timeout to force timeout and demonstrate replica read")
+    
+    try:
+        # Try with impossibly short timeout to force failure
+        result = cb_coll.get(key, timeout=timedelta(milliseconds=1))
+        print(f"✓ Unexpectedly succeeded with 1ms timeout")
+    except TimeoutException:
+        print(f"✗ Expected timeout occurred (1ms timeout)")
+        print(f"  Falling back to replica read...")
+        try:
+            result = cb_coll.get_any_replica(key, timeout=timedelta(seconds=5))
+            print(f"✓ Replica read succeeded!")
+            print(f"  Content: {result.content_as[dict]}")
+            print(f"  is_replica: {result.is_replica}")
+        except Exception as e:
+            print(f"✗ Replica read also failed: {e}")
+    except Exception as e:
+        print(f"✗ Unexpected error: {e}")
+
+
+# Run examples
+key = "airline_10"  # Use existing document from travel-sample
+
+print("=" * 70)
+print("REPLICA READ EXAMPLES")
+print("=" * 70)
+print("\nNote: Your cluster must have replicas configured to see replica reads.")
+print("Check Couchbase UI > Buckets > travel-sample to verify replica count.")
+
+# Example 1: Standard get with retry and replica fallback
+get_with_retry(key, timeout=5, max_retries=3)
+
+# Example 2: Get from any replica (fastest)
+get_any_replica_example(key)
+
+# Example 3: Get from all replicas (compare consistency)
+get_all_replicas_example(key)
+
+# Example 4: Simulate timeout scenario
+simulate_timeout_scenario(key)
+
+print("\n" + "=" * 70)
+print("REPLICA READ EXAMPLES COMPLETE")
+print("=" * 70)
 
 #Cleanly close the connection to the Couchbase cluster
 print("\nClosing connection to Couchbase cluster...")

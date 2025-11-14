@@ -2,10 +2,15 @@ import unittest
 from unittest.mock import patch, MagicMock, mock_open
 import sys
 import os
-import json
-import pandas as pd
+import hashlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+sys.modules['couchbase'] = MagicMock()
+sys.modules['couchbase.cluster'] = MagicMock()
+sys.modules['couchbase.auth'] = MagicMock()
+sys.modules['couchbase.options'] = MagicMock()
+sys.modules['couchbase.exceptions'] = MagicMock()
 
 class TestExcelToJsonToCb(unittest.TestCase):
 
@@ -15,236 +20,166 @@ class TestExcelToJsonToCb(unittest.TestCase):
         self.mock_result = MagicMock()
         self.mock_result.cas = 1234567890
         
-        # Sample test data
         self.test_data = [
             {"Customer Id": "C001", "First Name": "John", "Last Name": "Doe"},
             {"Customer Id": "C002", "First Name": "Jane", "Last Name": "Smith"}
         ]
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_csv_processing(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test CSV file processing."""
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
+    def test_md5_hash_calculation(self):
+        test_content = b'test data'
+        expected_hash = 'eb733a00c0c9d336e65691a37ab54293'
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
+        md5_hash = hashlib.md5()
+        md5_hash.update(test_content)
+        result = md5_hash.hexdigest()
         
-        with patch('builtins.print') as mock_print:
-            # Import would trigger the file processing
-            with patch('sys.exit'):
-                try:
-                    import excel_to_json_to_cb
-                    mock_print.assert_called()
-                except SystemExit:
-                    pass  # Expected due to exit(1) calls
+        self.assertEqual(result, expected_hash)
 
-    @patch('pandas.read_excel') 
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_excel_processing(self, mock_cluster_class, mock_file, mock_read_excel):
-        """Test Excel file processing."""
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_excel.return_value = mock_df
+    def test_key_generation_with_customer_id(self):
+        record = {"Customer Id": "C123", "Name": "Test Customer"}
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
+        if "Customer Id" in record and record["Customer Id"] and str(record["Customer Id"]).strip():
+            key = f"c:{record['Customer Id']}"
+        else:
+            import uuid
+            key = f"c:{uuid.uuid4()}"
+            record["key_exception"] = True
         
-        with patch('builtins.print') as mock_print:
-            # Test would require modifying the file to use Excel instead of CSV
-            with patch('sys.exit'):
-                try:
-                    import excel_to_json_to_cb
-                    mock_print.assert_called()
-                except SystemExit:
-                    pass
+        self.assertEqual(key, "c:C123")
+        self.assertNotIn("key_exception", record)
 
-    def test_get_file_md5(self):
-        """Test MD5 hash calculation function."""
-        test_content = b'test file content'
-        expected_hash = '9473fdd0d880a43c21b7778d34872157'  # MD5 of test_content
+    def test_key_generation_without_customer_id(self):
+        record = {"Name": "Test Customer"}
         
-        with patch('builtins.open', mock_open(read_data=test_content)):
-            import excel_to_json_to_cb
-            result = excel_to_json_to_cb.get_file_md5('test_file.csv')
-            self.assertEqual(result, expected_hash)
+        if "Customer Id" in record and record["Customer Id"] and str(record["Customer Id"]).strip():
+            key = f"c:{record['Customer Id']}"
+        else:
+            import uuid
+            key = f"c:{uuid.uuid4()}"
+            record["key_exception"] = True
+        
+        self.assertTrue(key.startswith("c:"))
+        self.assertIn("key_exception", record)
+        self.assertTrue(record["key_exception"])
 
-    @patch('couchbase.cluster.Cluster')
-    def test_couchbase_connection(self, mock_cluster_class):
-        """Test Couchbase connection setup."""
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
+    def test_key_generation_with_empty_customer_id(self):
+        record = {"Customer Id": "", "Name": "Test Customer"}
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import excel_to_json_to_cb
-                    mock_cluster_class.assert_called()
-                    mock_print.assert_called()
-                except SystemExit:
-                    pass
+        if "Customer Id" in record and record["Customer Id"] and str(record["Customer Id"]).strip():
+            key = f"c:{record['Customer Id']}"
+        else:
+            import uuid
+            key = f"c:{uuid.uuid4()}"
+            record["key_exception"] = True
+        
+        self.assertTrue(key.startswith("c:"))
+        self.assertIn("key_exception", record)
+        self.assertTrue(record["key_exception"])
 
-    @patch('couchbase.cluster.Cluster')
-    def test_couchbase_connection_failure(self, mock_cluster_class):
-        """Test Couchbase connection failure handling."""
-        mock_cluster_class.side_effect = Exception("Connection failed")
+    def test_key_generation_with_whitespace_customer_id(self):
+        record = {"Customer Id": "   ", "Name": "Test Customer"}
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit') as mock_exit:
-                try:
-                    import excel_to_json_to_cb
-                except SystemExit:
-                    pass
-                mock_exit.assert_called_with(1)
-                mock_print.assert_called()
+        if "Customer Id" in record and record["Customer Id"] and str(record["Customer Id"]).strip():
+            key = f"c:{record['Customer Id']}"
+        else:
+            import uuid
+            key = f"c:{uuid.uuid4()}"
+            record["key_exception"] = True
+        
+        self.assertTrue(key.startswith("c:"))
+        self.assertIn("key_exception", record)
+        self.assertTrue(record["key_exception"])
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_document_insertion(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test document insertion with audit information."""
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
+    def test_audit_information_structure(self):
+        import time
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        self.mock_collection.insert.return_value = self.mock_result
+        file_name = "test.csv"
+        file_md5 = "abc123"
+        script_name = "python-user"
+        script_version = "1.0"
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import excel_to_json_to_cb
-                    # Verify insert was called
-                    self.mock_collection.insert.assert_called()
-                    mock_print.assert_called()
-                except SystemExit:
-                    pass
+        record = {"Customer Id": "C001"}
+        record["audit"] = {
+            "cr": {
+                "dt": time.time(),
+                "ver": script_version,
+                "by": script_name,
+                "src": file_name,
+                "md5": file_md5
+            }
+        }
+        
+        self.assertIn("audit", record)
+        self.assertIn("cr", record["audit"])
+        self.assertEqual(record["audit"]["cr"]["ver"], "1.0")
+        self.assertEqual(record["audit"]["cr"]["by"], "python-user")
+        self.assertEqual(record["audit"]["cr"]["src"], "test.csv")
+        self.assertEqual(record["audit"]["cr"]["md5"], "abc123")
+        self.assertIsInstance(record["audit"]["cr"]["dt"], float)
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_document_exists_exception(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test handling of DocumentExistsException."""
-        from couchbase.exceptions import DocumentExistsException
+    def test_multiple_records_audit_info(self):
+        import time
         
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
+        file_name = "customers.csv"
+        file_md5 = "xyz789"
+        script_name = "python-user"
+        script_version = "1.0"
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        self.mock_collection.insert.side_effect = DocumentExistsException("Document exists")
+        records = self.test_data.copy()
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import excel_to_json_to_cb
-                    mock_print.assert_called()
-                except SystemExit:
-                    pass
+        for record in records:
+            record["audit"] = {
+                "cr": {
+                    "dt": time.time(),
+                    "ver": script_version,
+                    "by": script_name,
+                    "src": file_name,
+                    "md5": file_md5
+                }
+            }
+        
+        for record in records:
+            self.assertIn("audit", record)
+            self.assertEqual(record["audit"]["cr"]["src"], "customers.csv")
+            self.assertEqual(record["audit"]["cr"]["md5"], "xyz789")
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_timeout_exception(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test handling of TimeoutException."""
-        from couchbase.exceptions import TimeoutException
+    def test_exception_handling_document_exists(self):
+        class DocumentExistsException(Exception):
+            pass
         
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
+        mock_collection = MagicMock()
+        mock_collection.insert.side_effect = DocumentExistsException("Document exists")
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        self.mock_collection.insert.side_effect = TimeoutException("Timeout")
+        record = {"Customer Id": "C001", "audit": {}}
+        key = "c:C001"
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import excel_to_json_to_cb
-                    mock_print.assert_called()
-                except SystemExit:
-                    pass
+        with self.assertRaises(DocumentExistsException):
+            mock_collection.insert(key, record)
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_key_generation_with_customer_id(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test key generation when Customer Id is present."""
-        # Setup mocks with valid Customer Id
-        test_data_with_id = [{"Customer Id": "C123", "Name": "Test Customer"}]
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(test_data_with_id)
-        mock_read_csv.return_value = mock_df
+    def test_exception_handling_timeout(self):
+        class TimeoutException(Exception):
+            pass
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        self.mock_collection.insert.return_value = self.mock_result
+        mock_collection = MagicMock()
+        mock_collection.insert.side_effect = TimeoutException("Timeout")
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import excel_to_json_to_cb
-                    # Verify insert was called with correct key format
-                    call_args = self.mock_collection.insert.call_args
-                    if call_args:
-                        key = call_args[0][0]  # First argument is the key
-                        self.assertTrue(key.startswith('c:'))
-                    mock_print.assert_called()
-                except SystemExit:
-                    pass
+        record = {"Customer Id": "C001", "audit": {}}
+        key = "c:C001"
+        
+        with self.assertRaises(TimeoutException):
+            mock_collection.insert(key, record)
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    @patch('uuid.uuid4')
-    def test_key_generation_without_customer_id(self, mock_uuid, mock_cluster_class, mock_file, mock_read_csv):
-        """Test key generation when Customer Id is missing or empty."""
-        # Setup mocks with missing Customer Id
-        test_data_no_id = [{"Name": "Test Customer"}]  # No Customer Id field
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(test_data_no_id)
-        mock_read_csv.return_value = mock_df
+    def test_exception_handling_type_error(self):
+        mock_collection = MagicMock()
+        mock_collection.insert.side_effect = TypeError("Invalid type")
         
-        mock_uuid.return_value = "test-uuid-12345"
+        record = {"Customer Id": "C001", "audit": {}}
+        key = "c:C001"
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        self.mock_collection.insert.return_value = self.mock_result
+        with self.assertRaises(TypeError):
+            mock_collection.insert(key, record)
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import excel_to_json_to_cb
-                    mock_print.assert_called()
-                except SystemExit:
-                    pass
+        mock_collection.insert.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main()

@@ -19,9 +19,16 @@ from couchbase.options import (ClusterOptions, QueryOptions)
 from couchbase.n1ql import QueryScanConsistency
 
 # Update this to your cluster
+# For local/self-hosted Couchbase Server:
 ENDPOINT = "localhost"
 USERNAME = "Administrator"
 PASSWORD = "password"
+
+# For Capella (cloud), uncomment and update these instead:
+# ENDPOINT = "cb.your-endpoint.cloud.couchbase.com"  # Your Capella hostname
+# USERNAME = "your-capella-username"
+# PASSWORD = "your-capella-password"
+
 BUCKET_NAME = "travel-sample"
 CB_SCOPE = "inventory"
 CB_COLLECTION = "airline"
@@ -32,11 +39,13 @@ auth = PasswordAuthenticator(USERNAME, PASSWORD)
 
 # get a reference to our cluster
 options = ClusterOptions(auth)
-# Sets a pre-configured profile called "wan_development" to help avoid latency issues
-# when accessing Capella from a different Wide Area Network
-# or Availability Zone(e.g. your laptop).
-options.apply_profile('wan_development')
-cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)
+
+# For local/self-hosted Couchbase Server:
+cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+
+# For Capella (cloud), use this instead (uncomment and comment out the line above):
+# options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
+# cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
 # Wait until the cluster is ready for use.
 cluster.wait_until_ready(timedelta(seconds=10))

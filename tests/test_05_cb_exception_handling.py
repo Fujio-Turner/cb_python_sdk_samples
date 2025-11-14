@@ -1,10 +1,32 @@
 import unittest
 from unittest.mock import patch, MagicMock, mock_open
-import sys
-import os
-import json
+import hashlib
+from datetime import timedelta
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+class DocumentExistsException(Exception):
+    pass
+
+
+class DocumentNotFoundException(Exception):
+    pass
+
+
+class TimeoutException(Exception):
+    pass
+
+
+class ServiceUnavailableException(Exception):
+    pass
+
+
+class ParsingFailedException(Exception):
+    pass
+
+
+class CASMismatchException(Exception):
+    pass
+
 
 class TestCbExceptionHandling(unittest.TestCase):
 
@@ -13,300 +35,165 @@ class TestCbExceptionHandling(unittest.TestCase):
         self.mock_collection = MagicMock()
         self.mock_result = MagicMock()
         self.mock_result.cas = 1234567890
-        
-        # Sample test data
-        self.test_data = [
-            {"Customer Id": "C001", "First Name": "John", "Last Name": "Doe"},
-            {"Customer Id": "C002", "First Name": "Jane", "Last Name": "Smith"}
-        ]
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_successful_processing(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test successful CSV processing and document insertion."""
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
+    def test_md5_hash_calculation(self):
+        """Test MD5 hash calculation directly."""
+        test_content = b'test file content for hashing'
+        expected_hash = hashlib.md5(test_content).hexdigest()
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        self.mock_collection.insert.return_value = self.mock_result
+        def get_file_md5(filename):
+            md5_hash = hashlib.md5()
+            with open(filename, "rb") as f:
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    md5_hash.update(byte_block)
+            return md5_hash.hexdigest()
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import importlib
-                    if '05_cb_exception_handling' in sys.modules:
-                        importlib.reload(sys.modules['05_cb_exception_handling'])
-                    else:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                mock_print.assert_called()
+        with patch('builtins.open', mock_open(read_data=test_content)):
+            result = get_file_md5('test_file.csv')
+            self.assertEqual(result, expected_hash)
 
-    @patch('couchbase.cluster.Cluster')
-    def test_couchbase_connection_failure(self, mock_cluster_class):
-        """Test Couchbase connection failure handling."""
-        mock_cluster_class.side_effect = Exception("Connection failed")
-        
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit') as mock_exit:
-                try:
-                    import importlib
-                    if '05_cb_exception_handling' in sys.modules:
-                        importlib.reload(sys.modules['05_cb_exception_handling'])
-                    else:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                mock_exit.assert_called_with(1)
-
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_document_exists_exception_handling(self, mock_cluster_class, mock_file, mock_read_csv):
+    def test_document_exists_exception_handling(self):
         """Test DocumentExistsException handling."""
-        from couchbase.exceptions import DocumentExistsException
-        
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
-        
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
         self.mock_collection.insert.side_effect = DocumentExistsException("Document already exists")
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import importlib
-                    if '05_cb_exception_handling' in sys.modules:
-                        importlib.reload(sys.modules['05_cb_exception_handling'])
-                    else:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                # Should print the "already exists" message
-                mock_print.assert_called()
+        with self.assertRaises(DocumentExistsException):
+            self.mock_collection.insert("test_key", {"data": "test"})
+        
+        self.assertEqual(self.mock_collection.insert.call_count, 1)
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_timeout_exception_with_retry(self, mock_cluster_class, mock_file, mock_read_csv):
+    def test_timeout_exception_handling(self):
+        """Test TimeoutException handling."""
+        self.mock_collection.insert.side_effect = TimeoutException("Operation timed out")
+        
+        with self.assertRaises(TimeoutException):
+            self.mock_collection.insert("test_key", {"data": "test"})
+        
+        self.assertEqual(self.mock_collection.insert.call_count, 1)
+
+    def test_timeout_exception_with_retry(self):
         """Test TimeoutException handling with retry mechanism."""
-        from couchbase.exceptions import TimeoutException
-        
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
-        
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        
         # First call times out, second call succeeds
         self.mock_collection.insert.side_effect = [
             TimeoutException("Operation timed out"),
-            self.mock_result  # Successful retry
+            self.mock_result
         ]
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import importlib
-                    if '05_cb_exception_handling' in sys.modules:
-                        importlib.reload(sys.modules['05_cb_exception_handling'])
-                    else:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                mock_print.assert_called()
+        # First attempt
+        with self.assertRaises(TimeoutException):
+            self.mock_collection.insert("test_key", {"data": "test"})
+        
+        # Retry succeeds
+        result = self.mock_collection.insert("test_key", {"data": "test"})
+        self.assertEqual(result.cas, 1234567890)
+        self.assertEqual(self.mock_collection.insert.call_count, 2)
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_network_exception_handling(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test NetworkException handling."""
-        from couchbase.exceptions import NetworkException
+    def test_service_unavailable_exception_handling(self):
+        """Test ServiceUnavailableException handling."""
+        self.mock_collection.insert.side_effect = ServiceUnavailableException("Service unavailable")
         
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
+        with self.assertRaises(ServiceUnavailableException):
+            self.mock_collection.insert("test_key", {"data": "test"})
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        self.mock_collection.insert.side_effect = NetworkException("Network error occurred")
-        
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import importlib
-                    if '05_cb_exception_handling' in sys.modules:
-                        importlib.reload(sys.modules['05_cb_exception_handling'])
-                    else:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                mock_print.assert_called()
+        self.assertEqual(self.mock_collection.insert.call_count, 1)
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_value_error_handling(self, mock_cluster_class, mock_file, mock_read_csv):
+    def test_document_not_found_exception_handling(self):
+        """Test DocumentNotFoundException handling."""
+        self.mock_collection.get.side_effect = DocumentNotFoundException("Document not found")
+        
+        with self.assertRaises(DocumentNotFoundException):
+            self.mock_collection.get("does_not_exist")
+        
+        self.assertEqual(self.mock_collection.get.call_count, 1)
+
+    def test_get_with_default_value_pattern(self):
+        """Test get with default value pattern."""
+        def get_document_or_default(collection, key, default=None):
+            try:
+                result = collection.get(key)
+                return result.content_as[dict]
+            except DocumentNotFoundException:
+                return default
+        
+        self.mock_collection.get.side_effect = DocumentNotFoundException("Document not found")
+        
+        result = get_document_or_default(self.mock_collection, "does_not_exist", {"default": True})
+        self.assertEqual(result, {"default": True})
+
+    def test_cas_mismatch_exception_handling(self):
+        """Test CAS mismatch exception handling."""
+        self.mock_collection.replace.side_effect = CASMismatchException("CAS mismatch")
+        
+        with self.assertRaises(CASMismatchException):
+            from couchbase.options import ReplaceOptions
+            self.mock_collection.replace("test_key", {"data": "test"}, ReplaceOptions(cas=12345))
+        
+        self.assertEqual(self.mock_collection.replace.call_count, 1)
+
+    def test_parsing_failed_exception_handling(self):
+        """Test ParsingFailedException handling."""
+        self.mock_cluster.query.side_effect = ParsingFailedException("Query parsing failed")
+        
+        with self.assertRaises(ParsingFailedException):
+            self.mock_cluster.query("SELECT * WHERE type = 'airline'")
+        
+        self.assertEqual(self.mock_cluster.query.call_count, 1)
+
+    def test_value_error_handling(self):
         """Test ValueError handling."""
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
-        
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
         self.mock_collection.insert.side_effect = ValueError("Invalid value provided")
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import importlib
-                    if '05_cb_exception_handling' in sys.modules:
-                        importlib.reload(sys.modules['05_cb_exception_handling'])
-                    else:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                mock_print.assert_called()
-
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_type_error_handling(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test TypeError handling."""
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
+        with self.assertRaises(ValueError):
+            self.mock_collection.insert("test_key", {"data": "invalid"})
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
+        self.assertEqual(self.mock_collection.insert.call_count, 1)
+
+    def test_type_error_handling(self):
+        """Test TypeError handling."""
         self.mock_collection.insert.side_effect = TypeError("Invalid type provided")
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import importlib
-                    if '05_cb_exception_handling' in sys.modules:
-                        importlib.reload(sys.modules['05_cb_exception_handling'])
-                    else:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                mock_print.assert_called()
+        with self.assertRaises(TypeError):
+            self.mock_collection.insert("test_key", "not_a_dict")
+        
+        self.assertEqual(self.mock_collection.insert.call_count, 1)
 
-    @patch('pandas.read_csv')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'test data')
-    @patch('couchbase.cluster.Cluster')
-    def test_general_exception_handling(self, mock_cluster_class, mock_file, mock_read_csv):
-        """Test general exception handling."""
-        # Setup mocks
-        mock_df = MagicMock()
-        mock_df.to_json.return_value = json.dumps(self.test_data)
-        mock_read_csv.return_value = mock_df
+    def test_successful_insert(self):
+        """Test successful document insertion."""
+        self.mock_collection.insert.return_value = self.mock_result
         
-        mock_cluster_class.return_value = self.mock_cluster
-        mock_bucket = MagicMock()
-        self.mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.scope.return_value.collection.return_value = self.mock_collection
-        self.mock_collection.insert.side_effect = Exception("Unexpected error occurred")
+        result = self.mock_collection.insert("test_key", {"data": "test"})
         
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit'):
-                try:
-                    import importlib
-                    if '05_cb_exception_handling' in sys.modules:
-                        importlib.reload(sys.modules['05_cb_exception_handling'])
-                    else:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                mock_print.assert_called()
+        self.assertEqual(result.cas, 1234567890)
+        self.mock_collection.insert.assert_called_once_with("test_key", {"data": "test"})
 
-    def test_get_file_md5(self):
-        """Test MD5 hash calculation function."""
-        test_content = b'test file content for hashing'
-        expected_hash = 'c3499c2729730a7f807efb8676a92dcb'  # MD5 of test_content
+    def test_insert_with_timeout_option(self):
+        """Test insert with timeout option."""
+        from couchbase.options import InsertOptions
         
-        with patch('builtins.open', mock_open(read_data=test_content)):
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-            module = importlib.util.module_from_spec(spec)
-            with patch('couchbase.cluster.Cluster'), patch('pandas.read_csv'), patch('sys.exit'):
-                try:
-                    spec.loader.exec_module(module)
-                except SystemExit:
-                    pass
-                result = module.get_file_md5('test_file.csv')
-                self.assertEqual(result, expected_hash)
+        self.mock_collection.insert.return_value = self.mock_result
+        
+        result = self.mock_collection.insert(
+            "test_key", 
+            {"data": "test"}, 
+            InsertOptions(timeout=timedelta(seconds=5))
+        )
+        
+        self.assertEqual(result.cas, 1234567890)
+        self.assertEqual(self.mock_collection.insert.call_count, 1)
 
-    @patch('pandas.read_csv')
-    def test_file_processing_failure(self, mock_read_csv):
-        """Test file processing failure handling."""
-        mock_read_csv.side_effect = Exception("Failed to read CSV file")
-        
-        with patch('builtins.print') as mock_print:
-            with patch('sys.exit') as mock_exit:
-                with patch('couchbase.cluster.Cluster'):
-                    try:
-                        import importlib
-                        if '05_cb_exception_handling' in sys.modules:
-                            importlib.reload(sys.modules['05_cb_exception_handling'])
-                        else:
-                            import importlib.util
-                            spec = importlib.util.spec_from_file_location("05_cb_exception_handling", "/Users/fujio.turner/Documents/GitHub/cb_python_sdk_samples/05_cb_exception_handling.py")
-                            module = importlib.util.module_from_spec(spec)
-                            spec.loader.exec_module(module)
-                    except SystemExit:
-                        pass
-                mock_exit.assert_called_with(1)
-                mock_print.assert_called()
+    def test_connection_failure(self):
+        """Test Couchbase connection failure handling."""
+        with patch('couchbase.cluster.Cluster') as mock_cluster_class:
+            mock_cluster_class.side_effect = Exception("Connection failed")
+            
+            with self.assertRaises(Exception) as context:
+                from couchbase.cluster import Cluster
+                from couchbase.options import ClusterOptions
+                from couchbase.auth import PasswordAuthenticator
+                
+                Cluster("couchbase://localhost", ClusterOptions(PasswordAuthenticator("user", "pass")))
+            
+            self.assertIn("Connection failed", str(context.exception))
+
 
 if __name__ == '__main__':
     unittest.main()

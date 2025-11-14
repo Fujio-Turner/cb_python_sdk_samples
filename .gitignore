@@ -6,6 +6,9 @@
 # Pipenv files
 Pipfile
 Pipfile.lock
+
+# Virtual Environment
+venv/
 .venv/
 env/
 ENV/
