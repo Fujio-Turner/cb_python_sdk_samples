@@ -155,6 +155,24 @@ Demonstrates comprehensive debugging and tracing:
 
 ---
 
+### **11_cb_async_operations.py** - Async Operations with Class-Based Design
+Demonstrates high-performance async operations using a production-ready class structure:
+- **AsyncCouchbaseClient Class**:
+  - `__init__()` - Initialize with connection parameters
+  - `async connect()` - Connect with TLS and WAN profile options
+  - `async upsert_documents_concurrent()` - 20 concurrent upserts
+  - `async get_documents_concurrent()` - 20 concurrent gets
+  - `async remove_documents_concurrent()` - Batch cleanup
+  - `async close()` - Resource cleanup
+- **Performance metrics** - Throughput and timing analysis
+- **Proper async/await patterns** with `asyncio.run()`
+- **Clean encapsulation** - Reusable client for production apps
+- **Import from acouchbase** - Async-specific module
+
+**Key Concepts**: Async/await, concurrent operations, acouchbase, asyncio, OOP/class design, resource management, high throughput
+
+---
+
 ### **advanced_prepared_statement_wrapper.py** - Prepared Statement Optimization
 Production-ready query optimization wrapper:
 - Automatic prepared statement management with `adhoc=False`
