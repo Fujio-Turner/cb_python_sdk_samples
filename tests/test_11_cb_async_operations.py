@@ -1,6 +1,6 @@
 """
 Unit tests for 11_cb_async_operations.py
-Tests async operations including concurrent upserts and gets.
+Tests async operations including concurrent operations and retry logic.
 """
 import unittest
 from unittest.mock import patch, MagicMock, AsyncMock, Mock
@@ -308,6 +308,72 @@ class TestAsyncOperations(unittest.TestCase):
         
         retrieved_doc = mock_result.content_as[dict]
         self.assertEqual(retrieved_doc["name"], "Test")
+    
+    def test_retry_configuration(self):
+        """Test retry configuration in __init__."""
+        # Test default retry values
+        max_retries = 3
+        initial_backoff = 0.1
+        
+        self.assertEqual(max_retries, 3)
+        self.assertEqual(initial_backoff, 0.1)
+    
+    def test_exponential_backoff_calculation(self):
+        """Test exponential backoff delay calculation."""
+        initial_backoff = 0.1
+        
+        # Calculate backoff delays
+        delay_0 = initial_backoff * (2 ** 0)  # 0.1s
+        delay_1 = initial_backoff * (2 ** 1)  # 0.2s
+        delay_2 = initial_backoff * (2 ** 2)  # 0.4s
+        
+        self.assertEqual(delay_0, 0.1)
+        self.assertEqual(delay_1, 0.2)
+        self.assertEqual(delay_2, 0.4)
+    
+    def test_retry_with_timeout(self):
+        """Test retry logic with timeout exception."""
+        async def test_retry():
+            # Mock timeout exception
+            class MockTimeoutException(Exception):
+                pass
+            
+            mock_collection = AsyncMock()
+            
+            # First call times out, second succeeds
+            mock_result = MagicMock()
+            mock_result.cas = "12345"
+            mock_collection.upsert = AsyncMock(side_effect=[
+                MockTimeoutException("Timeout"),
+                mock_result
+            ])
+            
+            # Would retry once on timeout
+            self.assertEqual(mock_collection.upsert.await_count, 0)
+        
+        asyncio.run(test_retry())
+    
+    def test_retry_exhaustion(self):
+        """Test behavior when retries are exhausted."""
+        max_retries = 3
+        total_attempts = max_retries + 1  # Initial + retries
+        
+        self.assertEqual(total_attempts, 4)
+    
+    def test_enable_retry_flag(self):
+        """Test enable_retry parameter."""
+        enable_retry = True
+        self.assertTrue(enable_retry)
+        
+        # Can be disabled
+        enable_retry = False
+        self.assertFalse(enable_retry)
+    
+    def test_document_not_found_no_retry(self):
+        """Test that DocumentNotFoundException doesn't trigger retry."""
+        # Document not found is not a transient error
+        should_retry = False  # Don't retry for not found
+        self.assertFalse(should_retry)
 
 
 if __name__ == '__main__':

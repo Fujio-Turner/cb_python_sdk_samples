@@ -1,11 +1,13 @@
 """
-Demonstrates Full-Text Search (FTS) in Couchbase using the SEARCH() function.
+Demonstrates Full-Text Search (FTS) in Couchbase using both methods:
+1. SQL++ SEARCH() function (query-based approach)  
+2. Native SDK Search API (object-based approach)
 
 This script shows how to:
-1. Check if a search index exists
-2. Create a search index if it doesn't exist
-3. Wait for the index to be ready
-4. Perform various FTS queries using SEARCH()
+- Perform FTS using SQL++ SEARCH() function (works immediately)
+- Perform FTS using native SDK methods (requires scope-level index)
+- Compare both approaches with detailed pros/cons
+- Understand when to use each method
 
 Full-Text Search is useful for:
 - Text-based searches with wildcards, fuzzy matching, and relevance scoring
@@ -14,16 +16,52 @@ Full-Text Search is useful for:
 - Complex boolean queries with AND/OR/NOT logic
 - Phrase matching and term boosting
 
-Note: FTS indexes must be created before they can be used in queries.
+PROS & CONS OF EACH APPROACH:
+
+SQL++ SEARCH() Function Pros:
+- ✓ Can combine with SQL JOINs for related data in one query
+- ✓ Data manipulation (aggregation, filtering, sorting) done by SQL++, not app code
+- ✓ Returns full documents with all fields
+- ✓ Familiar SQL syntax for developers
+- ✓ Single query can search + join + aggregate
+- ✓ Example: Search hotels + JOIN reviews + GROUP BY rating - all in one query
+- ✓ Works with cluster-level indexes (no scope-level index needed)
+- ✗ Requires hop: Client → SQL++ Server → FTS Server (extra latency)
+- ✗ No FTS Search index alias support
+
+Native SDK Search API Pros:
+- ✓ Index alias support: Change FTS indexes without modifying application code
+  - Create alias "hotels-search" pointing to "hotels-index-v1"
+  - Deploy new index "hotels-index-v2", update alias
+  - Zero downtime, no code changes needed!
+- ✓ Fewer network hops: Client → FTS Server directly (lower latency)
+- ✓ FTS scan consistency control (not available in SQL++ SEARCH)
+- ✓ Type-safe query construction
+- ✓ Composable query objects (build complex queries programmatically)
+- ✓ More control over search-specific options
+- ✗ Returns keys/fields only - may need separate KV gets for full documents
+- ✗ Aggregation/joins must be done in application code
+- ✗ Requires scope-level FTS index (more setup)
+
+Recommendation:
+- Use SQL++ SEARCH() when: JOINs, aggregations, complex data manipulation, quick setup
+- Use Native SDK when: Aliases, lowest latency, scan consistency, programmatic queries
 """
 from datetime import timedelta
 import time
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
-from couchbase.options import ClusterOptions, QueryOptions
-from couchbase.exceptions import CouchbaseException, SearchIndexNotFoundException
-from couchbase.management.search import SearchIndex
-import json
+from couchbase.options import ClusterOptions, QueryOptions, SearchOptions
+from couchbase.exceptions import CouchbaseException
+from couchbase.search import (
+    SearchRequest,
+    MatchQuery,
+    TermQuery,
+    QueryStringQuery,
+    MatchPhraseQuery,
+    WildcardQuery,
+    ConjunctionQuery
+)
 
 # Update this to your cluster
 # For local/self-hosted Couchbase Server:
@@ -32,259 +70,252 @@ USERNAME = "Administrator"
 PASSWORD = "password"
 
 # For Capella (cloud), uncomment and update these instead:
-# ENDPOINT = "cb.your-endpoint.cloud.couchbase.com"  # Your Capella hostname
+# ENDPOINT = "cb.your-endpoint.cloud.couchbase.com"
 # USERNAME = "your-capella-username"
 # PASSWORD = "your-capella-password"
 
 BUCKET_NAME = "travel-sample"
 INDEX_NAME = "hotels-index"
+
+# Set to True to enable native SDK examples (uses cluster.search() with bucket-level index)
+USE_NATIVE_SDK_EXAMPLES = True  # Your bucket-level index should work
+
 # User Input ends here.
 
 # Connect options - authentication
 auth = PasswordAuthenticator(USERNAME, PASSWORD)
-
-# get a reference to our cluster
 options = ClusterOptions(auth)
 
 # For local/self-hosted Couchbase Server:
-cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+cluster = Cluster(f'couchbase://{ENDPOINT}', options)
 
-# For Capella (cloud), use this instead (uncomment and comment out the line above):
-# options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-# cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
+# For Capella (cloud), use this instead:
+# options.apply_profile('wan_development')
+# cluster = Cluster(f'couchbases://{ENDPOINT}', options)
 
 cluster.wait_until_ready(timedelta(seconds=10))
 
-# Get a reference to the bucket
-cb = cluster.bucket(BUCKET_NAME)
+# Get references
+bucket = cluster.bucket(BUCKET_NAME)
+scope = bucket.scope("inventory")
 
-# Get search index manager
-search_mgr = cluster.search_indexes()
+print("=" * 70)
+print("FULL-TEXT SEARCH (FTS) EXAMPLES")
+print("=" * 70)
+print("\nDemonstrating SQL++ SEARCH() and Native SDK approaches\n")
 
 
-def check_and_create_index(index_name, bucket_name):
-    """
-    Check if a search index exists, create it if it doesn't, and wait for it to be ready.
-    """
-    print(f"\n--- Checking for FTS index: {index_name} ---")
+# ============================================================================
+# PART 1: SQL++ SEARCH() Function Approach (Works Immediately)
+# ============================================================================
+print("=" * 70)
+print("PART 1: SQL++ SEARCH() Function Approach")
+print("=" * 70)
+print("No additional index setup required - uses cluster-level indexing\n")
+
+
+# Example 1: Basic SEARCH() with SQL++
+print("--- Example 1 (SQL++): Basic Text Search ---")
+query = f"""
+SELECT `name`, `country`
+FROM `{BUCKET_NAME}`.`inventory`.`hotel`
+WHERE SEARCH(`hotel`, "paris")
+LIMIT $limit
+"""
+
+try:
+    start_time = time.time()
+    result = cluster.query(query, QueryOptions(named_parameters={"limit": 5}))
+    rows = list(result)
+    elapsed = time.time() - start_time
     
-    try:
-        # Check if index exists
-        existing_index = search_mgr.get_index(index_name)
-        print(f"✓ Index '{index_name}' already exists")
-        return True
-    except SearchIndexNotFoundException:
-        print(f"Index '{index_name}' not found. Creating it now...")
-        
-        # Create index definition
-        # This creates a simple default index on all fields in the hotel collection
-        index_definition = {
-            "type": "fulltext-index",
-            "name": index_name,
-            "sourceType": "gocbcore",
-            "sourceName": bucket_name,
-            "planParams": {
-                "maxPartitionsPerPIndex": 1024,
-                "indexPartitions": 1
-            },
-            "params": {
-                "doc_config": {
-                    "docid_prefix_delim": "",
-                    "docid_regexp": "",
-                    "mode": "scope.collection.type_field",
-                    "type_field": "type"
-                },
-                "mapping": {
-                    "default_analyzer": "standard",
-                    "default_datetime_parser": "dateTimeOptional",
-                    "default_field": "_all",
-                    "default_mapping": {
-                        "dynamic": True,
-                        "enabled": False
-                    },
-                    "default_type": "_default",
-                    "docvalues_dynamic": False,
-                    "index_dynamic": True,
-                    "store_dynamic": False,
-                    "type_field": "_type",
-                    "types": {
-                        "inventory.hotel": {
-                            "dynamic": True,
-                            "enabled": True
-                        }
-                    }
-                },
-                "store": {
-                    "indexType": "scorch",
-                    "segmentVersion": 16
-                }
-            },
-            "sourceParams": {}
-        }
-        
-        try:
-            # Create the index
-            search_mgr.upsert_index(SearchIndex(
-                name=index_name,
-                source_name=bucket_name,
-                idx_type='fulltext-index',
-                params=index_definition['params']
-            ))
-            
-            print(f"✓ Index '{index_name}' created successfully")
-            print(f"  Waiting for index to be ready...")
-            
-            # Wait for index to be ready (check every 2 seconds, max 60 seconds)
-            max_wait = 60
-            elapsed = 0
-            while elapsed < max_wait:
-                time.sleep(2)
-                elapsed += 2
-                try:
-                    idx = search_mgr.get_index(index_name)
-                    # Index exists, assume it's ready
-                    print(f"✓ Index is ready (waited {elapsed}s)")
-                    return True
-                except:
-                    print(f"  Still waiting... ({elapsed}s)")
-                    continue
-            
-            print(f"⚠ Index creation may still be in progress after {max_wait}s")
-            return False
-            
-        except Exception as e:
-            print(f"✗ Failed to create index: {e}")
-            return False
-    except Exception as e:
-        print(f"✗ Error checking index: {e}")
-        return False
+    print(f"✓ Found {len(rows)} hotels with 'paris'")
+    for row in rows[:3]:
+        print(f"  - {row['name']} ({row['country']})")
+    print(f"  Time: {elapsed:.4f}s | Method: SQL++ SEARCH()")
+except Exception as e:
+    print(f"✗ Error: {e}")
 
 
-# Check and create index before running queries
-index_ready = check_and_create_index(INDEX_NAME, BUCKET_NAME)
+# Example 2: SEARCH() with wildcards
+print("\n--- Example 2 (SQL++): Wildcard Search ---")
+query = f"""
+SELECT `name`, `country`
+FROM `{BUCKET_NAME}`.`inventory`.`hotel`
+WHERE SEARCH(`hotel`, "country:fran*")
+LIMIT $limit
+"""
 
-if not index_ready:
-    print("\n⚠ Warning: Index may not be ready. Queries might fail.")
-    print("You can also create the index manually via Couchbase UI:")
-    print(f"  1. Go to Search > Add Index")
-    print(f"  2. Name: {INDEX_NAME}")
-    print(f"  3. Bucket: {BUCKET_NAME}")
-    print(f"  4. Type Mappings: Add 'inventory.hotel'")
-    print(f"  5. Click 'Create Index'\n")
+try:
+    start_time = time.time()
+    result = cluster.query(query, QueryOptions(named_parameters={"limit": 5}))
+    rows = list(result)
+    elapsed = time.time() - start_time
+    
+    print(f"✓ Found {len(rows)} hotels in France (wildcard: fran*)")
+    for row in rows[:3]:
+        print(f"  - {row['name']}")
+    print(f"  Time: {elapsed:.4f}s | Method: SQL++ wildcard syntax")
+except Exception as e:
+    print(f"✗ Error: {e}")
 
 
+# Example 3: SEARCH() with boolean AND
+print("\n--- Example 3 (SQL++): Boolean AND Search ---")
+query = f"""
+SELECT `name`, `city`, `country`
+FROM `{BUCKET_NAME}`.`inventory`.`hotel`
+WHERE SEARCH(`hotel`, "country:france AND city:paris")
+LIMIT $limit
+"""
+
+try:
+    start_time = time.time()
+    result = cluster.query(query, QueryOptions(named_parameters={"limit": 5}))
+    rows = list(result)
+    elapsed = time.time() - start_time
+    
+    print(f"✓ Found {len(rows)} hotels in Paris, France (AND logic)")
+    for row in rows[:3]:
+        print(f"  - {row['name']}")
+    print(f"  Time: {elapsed:.4f}s | Method: SQL++ boolean AND")
+except Exception as e:
+    print(f"✗ Error: {e}")
+
+
+# ============================================================================
+# PART 2: Native SDK Search API Approach (Requires Scope-Level Index)
+# ============================================================================
 print("\n" + "=" * 70)
-print("FTS SEARCH EXAMPLES")
+print("PART 2: Native SDK Search API Approach")
 print("=" * 70)
 
+if not USE_NATIVE_SDK_EXAMPLES:
+    print("\n⚠️  Native SDK examples DISABLED by default")
+    print("Set USE_NATIVE_SDK_EXAMPLES = True to enable (requires FTS index)")
+    print("\nYour current index setup will work - it's bucket-level, not scope-level.")
+    print("The examples use cluster.search() which works with bucket-level indexes.\n")
+else:
+    print("\nNative SDK examples ENABLED - using bucket-level FTS index\n")
+    
+    # Example 4: MatchQuery - Using cluster.search() for bucket-level index
+    print("--- Example 4 (SDK): MatchQuery for 'paris' ---")
+    try:
+        start_time = time.time()
+        
+        query = MatchQuery("paris", field="name")
+        request = SearchRequest.create(query)
+        
+        # Use cluster.search() for bucket-level index (not scope.search())
+        search_result = cluster.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "country"]))
+        
+        rows = list(search_result.rows())
+        elapsed = time.time() - start_time
+        
+        print(f"✓ Found {len(rows)} hotels with 'paris' in name")
+        for row in rows[:3]:
+            # Access fields safely
+            if hasattr(row, 'fields') and row.fields:
+                print(f"  - {row.fields.get('name', 'N/A')} ({row.fields.get('country', 'N/A')})")
+            else:
+                print(f"  - ID: {row.id}")
+        print(f"  Time: {elapsed:.4f}s | Method: SDK MatchQuery + cluster.search()")
+    except Exception as e:
+        print(f"✗ Error: {e}")
+    
+    
+    # Example 5: MatchPhraseQuery
+    print("\n--- Example 5 (SDK): MatchPhraseQuery for Exact Phrase ---")
+    try:
+        start_time = time.time()
+        
+        query = MatchPhraseQuery("historic building", field="description")
+        request = SearchRequest.create(query)
+        
+        search_result = cluster.search(INDEX_NAME, request, SearchOptions(limit=3, fields=["name", "description"]))
+        
+        rows = list(search_result.rows())
+        elapsed = time.time() - start_time
+        
+        print(f"✓ Found {len(rows)} hotels with 'historic building' phrase")
+        for row in rows:
+            if hasattr(row, 'fields') and row.fields:
+                name = row.fields.get('name', 'N/A')
+                desc = row.fields.get('description', '')
+                print(f"  - {name}: {desc[:60]}...")
+            else:
+                print(f"  - ID: {row.id}")
+        print(f"  Time: {elapsed:.4f}s | Method: SDK MatchPhraseQuery + cluster.search()")
+    except Exception as e:
+        print(f"✗ Error: {e}")
+    
+    
+    # Example 6: ConjunctionQuery (AND logic)
+    print("\n--- Example 6 (SDK): ConjunctionQuery (AND Logic) ---")
+    try:
+        start_time = time.time()
+        
+        query1 = MatchQuery("france", field="country")
+        query2 = MatchQuery("paris", field="city")
+        
+        conjunction = ConjunctionQuery(query1, query2)
+        request = SearchRequest.create(conjunction)
+        
+        search_result = cluster.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "city", "country"]))
+        
+        rows = list(search_result.rows())
+        elapsed = time.time() - start_time
+        
+        print(f"✓ Found {len(rows)} hotels in Paris, France (AND logic)")
+        for row in rows[:3]:
+            if hasattr(row, 'fields') and row.fields:
+                print(f"  - {row.fields.get('name', 'N/A')}")
+            else:
+                print(f"  - ID: {row.id}")
+        print(f"  Time: {elapsed:.4f}s | Method: SDK ConjunctionQuery + cluster.search()")
+    except Exception as e:
+        print(f"✗ Error: {e}")
 
-# Example 1: Basic SEARCH() - no index required (searches default fields)
-print("\n--- Example 1: Basic SEARCH() (no specific index) ---")
-query = """
-SELECT name, country
-FROM `travel-sample`.inventory.hotel
-WHERE SEARCH(hotel, "paris")
-LIMIT 5
-"""
-try:
-    start_time = time.time()
-    result = cluster.query(query)
-    rows = list(result)
-    for row in rows:
-        print(f"  {row}")
-    print(f"✓ Found {len(rows)} results in {time.time() - start_time:.4f}s")
-except Exception as e:
-    print(f"✗ Error: {e}")
 
+# ============================================================================
+# COMPARISON SUMMARY
+# ============================================================================
+print("\n" + "=" * 70)
+print("COMPARISON: SQL++ SEARCH() vs Native SDK")
+print("=" * 70)
 
-# Example 2: SEARCH() with specific field using FTS index
-print(f"\n--- Example 2: Field-specific search using '{INDEX_NAME}' ---")
-query = f"""
-SELECT name, country
-FROM `travel-sample`.inventory.hotel
-WHERE SEARCH(hotel, "country:france", {{"index": "{INDEX_NAME}"}})
-LIMIT 5
-"""
-try:
-    start_time = time.time()
-    result = cluster.query(query)
-    rows = list(result)
-    for row in rows:
-        print(f"  {row}")
-    print(f"✓ Found {len(rows)} results in {time.time() - start_time:.4f}s")
-except Exception as e:
-    print(f"✗ Error: {e}")
+print("\n🔹 SQL++ SEARCH() Approach:")
+print("  ✓ Works immediately - no scope-level index needed")
+print("  ✓ Combine with SQL JOINs (e.g., search hotels + join reviews)")
+print("  ✓ Aggregation in SQL++ (GROUP BY, ORDER BY, COUNT)")
+print("  ✓ Returns full documents")
+print("  ✓ Familiar SQL syntax")
+print("  ✗ Extra network hop (Client → SQL++ → FTS)")
+print("  ✗ No index alias support")
 
+print("\n🔹 Native SDK Search API:")
+print("  ✓ Index aliases for zero-downtime index updates")
+print("  ✓ Direct to FTS server (fewer hops = lower latency)")
+print("  ✓ FTS scan consistency control")
+print("  ✓ Type-safe, composable query objects")
+print("  ✗ Requires scope-level index setup")
+print("  ✗ Returns fields only (may need KV gets for full docs)")
+print("  ✗ Aggregation/joins in application code")
 
-# Example 3: Wildcard search
-print(f"\n--- Example 3: Wildcard search (fran*) ---")
-query = f"""
-SELECT name, country
-FROM `travel-sample`.inventory.hotel
-WHERE SEARCH(hotel, "country:fran*", {{"index": "{INDEX_NAME}"}})
-LIMIT 5
-"""
-try:
-    start_time = time.time()
-    result = cluster.query(query)
-    rows = list(result)
-    for row in rows:
-        print(f"  {row}")
-    print(f"✓ Found {len(rows)} results in {time.time() - start_time:.4f}s")
-except Exception as e:
-    print(f"✗ Error: {e}")
-
-
-# Example 4: Phrase search
-print(f"\n--- Example 4: Phrase search ---")
-query = f"""
-SELECT name, description
-FROM `travel-sample`.inventory.hotel
-WHERE SEARCH(hotel, 'description:"historic building"', {{"index": "{INDEX_NAME}"}})
-LIMIT 3
-"""
-try:
-    start_time = time.time()
-    result = cluster.query(query)
-    rows = list(result)
-    for row in rows:
-        print(f"  {row['name']}: {row['description'][:80]}...")
-    print(f"✓ Found {len(rows)} results in {time.time() - start_time:.4f}s")
-except Exception as e:
-    print(f"✗ Error: {e}")
-
-
-# Example 5: Boolean query (AND/OR)
-print(f"\n--- Example 5: Boolean query (country AND city) ---")
-query = f"""
-SELECT name, country, city
-FROM `travel-sample`.inventory.hotel
-WHERE SEARCH(hotel, "country:france AND city:paris", {{"index": "{INDEX_NAME}"}})
-LIMIT 5
-"""
-try:
-    start_time = time.time()
-    result = cluster.query(query)
-    rows = list(result)
-    for row in rows:
-        print(f"  {row}")
-    print(f"✓ Found {len(rows)} results in {time.time() - start_time:.4f}s")
-except Exception as e:
-    print(f"✗ Error: {e}")
-
+print("\n💡 When to Use Each:")
+print("  - SQL++ SEARCH(): JOINs, aggregations, full documents, quick setup")
+print("  - Native SDK: Aliases, lowest latency, scan consistency, production flexibility")
 
 print("\n" + "=" * 70)
 print("FTS SEARCH EXAMPLES COMPLETE")
 print("=" * 70)
 
-print("\nNote: For more advanced FTS features:")
-print("  - Fuzzy matching: Use ~N (e.g., 'name:paris~2')")
-print("  - Range queries: Use field:[start TO end]")
-print("  - Boost terms: Use ^N (e.g., 'name:paris^2.0')")
-print("  - Regex: Use field:/pattern/")
-print("  - Geographic: Use geo queries with lat/lon")
+print("\nLearn More:")
+print("  - Search API: https://docs.couchbase.com/sdk-api/couchbase-python-client/couchbase_api/couchbase_search.html")
+print("  - SQL++ SEARCH: https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/searchfun.html")
+print("  - Index Aliases: https://docs.couchbase.com/server/current/fts/fts-index-aliases.html")
 
 # Close the connection
-print("\nClosing connection to Couchbase cluster...")
+print("\nClosing connection...")
 cluster.close()
-print("Connection closed successfully.")
+print("Connection closed.")

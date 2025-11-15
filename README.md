@@ -90,7 +90,7 @@ All tests use mocking - **no live Couchbase cluster required**.
 
 ## 📖 Documentation
 
-- **[00_cb_kv_ops_list.md](00_cb_kv_ops_list.md)** - Detailed guide for each script
+- **[00_cb_ops_list.md](00_cb_ops_list.md)** - Detailed guide for all 12 sample scripts
 - **[advanced_multi_docs.md](advanced_multi_docs.md)** - Batch operation patterns
 - **[AGENTS.md](AGENTS.md)** - AI agent reference guide
 

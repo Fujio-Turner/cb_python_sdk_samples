@@ -36,7 +36,7 @@ All scripts are numbered to show progression from basic to advanced:
 ### 📁 Documentation
 
 - **README.md** - Main documentation
-- **00_cb_kv_ops_list.md** - Comprehensive operations reference
+- **00_cb_ops_list.md** - Comprehensive operations reference (all 12 scripts)
 - **advanced_multi_docs.md** - Multi-operation patterns (batch operations)
 
 ### 📁 Tests

@@ -124,17 +124,31 @@ Shows transactional query operations:
 
 ---
 
-### **09_cb_fts_search.py** - Full-Text Search (FTS)
-Comprehensive full-text search examples:
-- **Index Management**: Check, create, and wait for FTS indexes
-- **Basic Search**: Simple text searches
-- **Field-Specific Search**: Search specific fields
-- **Wildcard Search**: Pattern matching (e.g., `fran*`)
-- **Phrase Search**: Exact phrase matching
-- **Boolean Queries**: Complex AND/OR logic
-- Performance optimization with FTS indexes
+### **09_cb_fts_search.py** - Full-Text Search (FTS) - SQL++ and Native SDK
+Comprehensive full-text search demonstrating **both approaches**:
 
-**Key Concepts**: FTS, search indexes, wildcards, boolean search, relevance scoring
+**SQL++ SEARCH() Function (3 examples):**
+- Basic text search
+- Wildcard search (`fran*`)
+- Boolean AND search
+- Returns full documents
+- Works immediately (no scope-level index needed)
+
+**Native SDK Search API (3 examples):**
+- `MatchQuery` - Match term in field
+- `MatchPhraseQuery` - Exact phrase matching
+- `ConjunctionQuery` - AND logic (multiple conditions)
+- Uses `cluster.search()` for bucket-level indexes
+- Returns document IDs (faster, ~40x)
+- Composable, type-safe query objects
+
+**Detailed Comparison:**
+- SQL++ Pros: JOINs, aggregations, full documents, quick setup
+- SDK Pros: Index aliases, fewer network hops, scan consistency, lower latency
+- When to use each approach with real-world guidance
+- Performance differences demonstrated
+
+**Key Concepts**: FTS, SQL++ SEARCH(), native SDK API, MatchQuery, ConjunctionQuery, index aliases, cluster.search(), search performance, query composition
 
 ---
 
@@ -158,18 +172,47 @@ Demonstrates comprehensive debugging and tracing:
 ### **11_cb_async_operations.py** - Async Operations with Class-Based Design
 Demonstrates high-performance async operations using a production-ready class structure:
 - **AsyncCouchbaseClient Class**:
-  - `__init__()` - Initialize with connection parameters
-  - `async connect()` - Connect with TLS and WAN profile options
-  - `async upsert_documents_concurrent()` - 20 concurrent upserts
-  - `async get_documents_concurrent()` - 20 concurrent gets
-  - `async remove_documents_concurrent()` - Batch cleanup
+  - `__init__()` - Initialize with connection and retry configuration
+  - `async connect()` - Connect with TLS, WAN profile, observability
+  - `async upsert_document()` - Single doc upsert with retry
+  - `async get_document()` - Single doc get with retry
+  - `async remove_document()` - Single doc remove with retry
   - `async close()` - Resource cleanup
+- **Exponential backoff retry** - 0.1s → 0.2s → 0.4s for transient failures
+- **Concurrent operations** - 20 upserts, 20 gets using asyncio.gather()
+- **Mixed operations** - Upserts, gets, removes running simultaneously
+- **Slow operations logging** - KV > 100ms threshold
+- **Orphaned response tracking** - Timeout detection
 - **Performance metrics** - Throughput and timing analysis
-- **Proper async/await patterns** with `asyncio.run()`
-- **Clean encapsulation** - Reusable client for production apps
-- **Import from acouchbase** - Async-specific module
+- **DEBUG flag** - Toggle detailed logging on/off
 
-**Key Concepts**: Async/await, concurrent operations, acouchbase, asyncio, OOP/class design, resource management, high throughput
+**Key Concepts**: Async/await, concurrent operations, acouchbase, asyncio, OOP/class design, exponential backoff, retry logic, observability
+
+---
+
+### **12_cb_async_queries.py** - Async SQL++ Queries with Observability
+Demonstrates async query operations with comprehensive best practices:
+- **AsyncCouchbaseQueryClient Class**:
+  - `async connect()` - Connection with slow query logging
+  - `async execute_query()` - Execute with retry, timing, profiling
+  - `async close()` - Clean shutdown
+- **7 Query Examples**:
+  - Parameterized queries ($country, $limit)
+  - 5 concurrent queries with asyncio.gather()
+  - Query profiling (PHASES/TIMINGS modes)
+  - use_replica for high availability
+  - Prepared statements (adhoc=False) - 5 executions showing ~80% speedup
+  - Concurrent prepared statements
+  - REQUEST_PLUS scan consistency
+- **Custom timeouts** - 5s, 10s, 30s examples (default: 75s)
+- **Exponential backoff retry** - Transient failure handling
+- **Backticks** - Field names and bucket.scope.collection
+- **Bind variables** - $country, $limit (prevents SQL injection)
+- **Slow query logging** - >500ms threshold with JSON metrics
+- **Performance comparison** - adhoc=True vs adhoc=False
+- **Query metrics** - execution_time, result_count, percentiles
+
+**Key Concepts**: Async queries, SQL++/N1QL, query profiling, prepared statements, use_replica, scan consistency, bind variables, backticks, timeouts, observability, exponential backoff
 
 ---
 

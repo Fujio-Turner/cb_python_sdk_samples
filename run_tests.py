@@ -108,6 +108,7 @@ def get_working_tests():
         'tests.test_advanced_prepared_statement_wrapper',
         'tests.test_01_cb_set_get',
         'tests.test_11_cb_async_operations',
+        'tests.test_12_cb_async_queries',
     ]
     
     # Try to add tests that don't have "invalid format" issues
