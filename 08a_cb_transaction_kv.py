@@ -1,12 +1,46 @@
 """
-Provides functions for performing Couchbase transactions, including upsert and move operations.
+Demonstrates ACID transactions for key-value operations in Couchbase.
 
-The `upsert_document` function upserts a document to the specified Couchbase collection. 
-It handles various exceptions that may occur during the operation.
+Transactions allow multiple operations to be performed atomically, ensuring that 
+either all operations succeed or all are rolled back in case of failure.
 
-The `move_numbers` function performs a Couchbase transaction to move a specified amount
- from one document to another. It uses the Couchbase transactions API to ensure atomicity 
- and consistency of the operation.
+This script shows:
+- Multi-document atomic operations (move value from doc1 to doc2)
+- Transaction commit and rollback
+- Exception handling
+- Durability level configuration
+
+IMPORTANT - Transaction Durability Levels:
+============================================
+Durability controls how safely transactions are persisted before commit.
+
+Available Levels:
+- **None (Default)**: 
+  - No durability guarantees
+  - Fastest performance (~10ms)
+  - Transaction committed in memory only
+  - Use for: Development, non-critical data, maximum performance
+  
+- **MAJORITY**:
+  - Transaction replicated to majority of replica nodes
+  - **Requires: At least 1 replica configured on bucket**
+  - Slower (~20-30ms, 2-3x impact)
+  - Protects against single node failure
+  - Use for: Important data, production workloads
+  
+- **PERSIST_TO_MAJORITY**:
+  - Transaction persisted to disk on majority of nodes
+  - **Requires: At least 1 replica configured on bucket**
+  - Slowest (~50-100ms, 5-10x impact)
+  - Survives node crashes and restarts
+  - Use for: Critical financial data, audit trails, compliance
+
+Cost/Performance Impact:
+- None: ~10ms (baseline) - works without replicas ✅
+- MAJORITY: ~20-30ms (2-3x slower) - requires replicas ⚠️
+- PERSIST_TO_MAJORITY: ~50-100ms (5-10x slower) - requires replicas ⚠️
+
+This script uses durability_level=None for compatibility with single-node setups.
 """
 from datetime import timedelta
 import time
@@ -138,10 +172,9 @@ def move_numbers(key1, key2, amount):
 
         # Run the transaction with the new options
         result = cluster.transactions.run(txn_logic, options)
-        if result.is_committed():
-            print("Transaction completed successfully")
-        else:
-            print("Transaction failed to commit")
+        # TransactionResult is returned on success (no need to check is_committed)
+        print("Transaction completed successfully")
+        print(f"Transaction ID: {result.transaction_id}")
 
     except DocumentNotFoundException as e:
         print(f"Document not found: {e}")

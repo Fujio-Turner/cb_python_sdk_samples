@@ -1,29 +1,56 @@
 """
-Performs a Couchbase transaction to move a numeric value from one document to another.
+Demonstrates ACID transactions using SQL++ (N1QL) queries in Couchbase.
 
-The `move_numbers_n1ql` function performs a Couchbase transaction to update two 
-documents. It decrements the `stuff` field in one document by the specified `amount`,
- and increments the `stuff` field in another document by the same `amount`. The function
- uses N1QL queries to perform the updates and returns the updated `stuff` values for each document.
+This script shows how to perform transactional updates using SQL++ queries
+instead of key-value operations, allowing for:
+- SQL-based atomic updates across multiple documents
+- Query-based transaction logic
+- RETURNING clause to verify updates within the transaction
 
-The function also updates the `timestamp` field in both documents to the current time.
+IMPORTANT - Transaction Durability Levels:
+============================================
+Durability controls how safely transactions are persisted before commit.
 
-If the transaction is successful, the function prints a message indicating that the 
-transaction was committed successfully. If the transaction fails, the function prints 
-an error message indicating the reason for the failure.
+Available Levels:
+- **None (Default)**: 
+  - No durability guarantees
+  - Fastest performance (~10ms)
+  - Transaction committed in memory only
+  - Works without replicas ✅
+  - Use for: Development, non-critical data, maximum performance
+  
+- **MAJORITY**:
+  - Transaction replicated to majority of replica nodes
+  - **Requires: At least 1 replica configured on bucket** ⚠️
+  - Slower (~20-30ms, 2-3x impact)
+  - Protects against single node failure
+  - Use for: Important data, production workloads
+  
+- **PERSIST_TO_MAJORITY**:
+  - Transaction persisted to disk on majority of nodes
+  - **Requires: At least 1 replica configured on bucket** ⚠️
+  - Slowest (~50-100ms, 5-10x impact)
+  - Survives node crashes and restarts
+  - Use for: Critical financial data, audit trails, compliance requirements
 
-Args:
-    key1 (str): The key of the first document to be updated.
-    key2 (str): The key of the second document to be updated.
-    amount (int): The amount to be moved from the first document to the second document.
+Cost/Performance Impact:
+- None: ~10ms (baseline) - No replicas needed ✅
+- MAJORITY: ~20-30ms (2-3x slower) - Requires replicas
+- PERSIST_TO_MAJORITY: ~50-100ms (5-10x slower) - Requires replicas
 
-Raises:
-    DocumentNotFoundException: If either of the documents specified by `key1` or `key2` does not exist.
-    InvalidValueException: If the document value is invalid.
-    TimeoutException: If the operation times out.
-    TransactionFailed: If the transaction fails to reach the commit point.
-    TransactionCommitAmbiguous: If the transaction possibly committed, but the outcome is ambiguous.
-    CouchbaseException: If a general Couchbase error occurs.
+Performance vs Safety Tradeoff:
+- Higher durability = Better data safety + Slower performance
+- Lower durability = Faster performance + Risk of data loss on node failure
+- Production recommendation: MAJORITY (good balance)
+
+Configuration Example:
+```python
+from couchbase.durability import Durability
+options = TransactionOptions(durability_level=Durability.MAJORITY)
+result = cluster.transactions.run(txn_logic, options)
+```
+
+This script uses durability_level=None for compatibility with single-node setups.
 """
 from datetime import timedelta
 import time
@@ -77,13 +104,13 @@ CB_COLLECTION = "airline"
 try:
     # Connect options - authentication
     auth = PasswordAuthenticator(USERNAME, PASSWORD)
-
+    
     # get a reference to our cluster
     options = ClusterOptions(auth)
-
+    
     # For local/self-hosted Couchbase Server:
     cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
-
+    
     # For Capella (cloud), use this instead (uncomment and comment out the line above):
     # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
     # cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
@@ -98,12 +125,16 @@ try:
     cb_coll = cb.scope(CB_SCOPE).collection(CB_COLLECTION)
 except AuthenticationException as e:
     print(f"Authentication error: {e}")
+    exit(1)
 except TimeoutException as e:
     print(f"Timeout error: {e}")
+    exit(1)
 except BucketNotFoundException as e:
     print(f"Bucket not found: {e}")
+    exit(1)
 except CouchbaseException as e:
     print(f"Couchbase error: {e}")
+    exit(1)
 
 # upsert document function
 def upsert_document(key, doc):
@@ -141,7 +172,8 @@ def move_numbers_n1ql(key1, key2, amount):
         RETURNING META().id, stuff
         """
         result1 = ctx.query(query1)
-        for row in result1:
+        # TransactionQueryResult needs .rows() to iterate
+        for row in result1.rows():
             print(f"Updated {row['id']}: new stuff value = {row['stuff']}")
 
         # Perform the second update
@@ -153,16 +185,15 @@ def move_numbers_n1ql(key1, key2, amount):
         RETURNING META().id, stuff
         """
         result2 = ctx.query(query2)
-        for row in result2:
+        # TransactionQueryResult needs .rows() to iterate
+        for row in result2.rows():
             print(f"Updated {row['id']}: new stuff value = {row['stuff']}")
 
     try:
         result: TransactionResult = cluster.transactions.run(txn_logic)
-        
-        if result.is_committed():
-            print("Transaction committed successfully")
-        else:
-            print("Transaction did not commit")
+        # TransactionResult is returned on success
+        print("Transaction committed successfully")
+        print(f"Transaction ID: {result.transaction_id}")
 
     except DocumentNotFoundException as e:
         print(f"Document not found: {e}")
