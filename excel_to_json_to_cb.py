@@ -18,7 +18,13 @@ from couchbase.cluster import Cluster
 from couchbase.options import ClusterOptions
 from couchbase.auth import PasswordAuthenticator
 from couchbase.options import InsertOptions
-from couchbase.exceptions import DocumentExistsException, TimeoutException
+from couchbase.management.buckets import BucketSettings, BucketType, StorageBackend
+from couchbase.exceptions import (
+    DocumentExistsException, 
+    TimeoutException,
+    BucketNotFoundException,
+    BucketAlreadyExistsException
+)
 import time
 import hashlib
 import os
@@ -27,9 +33,16 @@ import uuid
 import json
 
 # Couchbase connection parameters
+# For local/self-hosted Couchbase Server:
 CB_HOST = "localhost"
 CB_USER = "Administrator"
 CB_PASS = "password"
+
+# For Capella (cloud), uncomment and update these instead:
+# CB_HOST = "cb.your-endpoint.cloud.couchbase.com"  # Your Capella hostname
+# CB_USER = "your-capella-username"
+# CB_PASS = "your-capella-password"
+
 CB_BUCKET = "example"
 CB_SCOPE = "_default"
 CB_COLLECTION = "_default"
@@ -51,10 +64,45 @@ def get_file_md5(filename):
 # Connect to Couchbase
 cluster = None
 try:
-    cluster = Cluster(f"couchbase://{CB_HOST}", ClusterOptions(PasswordAuthenticator(CB_USER, CB_PASS)))
+    auth = PasswordAuthenticator(CB_USER, CB_PASS)
+    options = ClusterOptions(auth)
+    
+    # For local/self-hosted Couchbase Server:
+    cluster = Cluster(f"couchbase://{CB_HOST}", options)
+    
+    # For Capella (cloud), use this instead (uncomment and comment out the line above):
+    # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
+    # cluster = Cluster(f"couchbases://{CB_HOST}", options)  # Note: couchbaseS (secure)
+    
+    cluster.wait_until_ready(timedelta(seconds=10))
+    
+    # Check if bucket exists, create if it doesn't
+    bucket_mgr = cluster.buckets()
+    try:
+        bucket_info = bucket_mgr.get_bucket(CB_BUCKET)
+        print(f"Bucket '{CB_BUCKET}' already exists")
+    except BucketNotFoundException:
+        print(f"Bucket '{CB_BUCKET}' not found. Creating with 100MB...")
+        try:
+            settings = BucketSettings(
+                name=CB_BUCKET,
+                bucket_type=BucketType.COUCHBASE,
+                ram_quota_mb=100,
+                storage_backend=StorageBackend.COUCHSTORE
+            )
+            bucket_mgr.create_bucket(settings)
+            print(f"✓ Bucket '{CB_BUCKET}' created successfully (100MB, Couchbase Store)")
+            # Wait for bucket to be ready
+            time.sleep(3)
+        except BucketAlreadyExistsException:
+            print(f"Bucket '{CB_BUCKET}' already exists (created by another process)")
+        except Exception as create_error:
+            print(f"Failed to create bucket: {create_error}")
+            exit(1)
+    
     bucket = cluster.bucket(CB_BUCKET)
     collection = bucket.scope(CB_SCOPE).collection(CB_COLLECTION)
-    print("Successfully connected to Couchbase")
+    print("Successfully connected to Couchbase collection")
 except Exception as e:
     print(f"Failed to connect to Couchbase: {str(e)}")
     exit(1)

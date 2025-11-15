@@ -22,11 +22,12 @@ All scripts are numbered to show progression from basic to advanced:
 6. **05_cb_exception_handling.py** - Comprehensive exception handling + CSV import
 7. **06_cb_get_retry_replica_read.py** - High availability with replica reads
 8. **07_cb_query_own_write.py** - Read-your-own-writes consistency
-9. **08a_cb_transaction_kv.py** - ACID transactions (key-value)
-10. **08b_cb_transaction_query.py** - ACID transactions (queries)
-11. **09_cb_fts_search.py** - Full-text search with index management
+9. **08a_cb_transaction_kv.py** - ACID transactions (key-value) with durability
+10. **08b_cb_transaction_query.py** - ACID transactions (queries) with durability
+11. **09_cb_fts_search.py** - Full-text search (SQL++ SEARCH & Native SDK API)
 12. **10_cb_debug_tracing.py** - Logging, slow ops detection, OpenTelemetry
-13. **11_cb_async_operations.py** - Async/await concurrent operations
+13. **11_cb_async_operations.py** - Async KV operations with retry/observability
+14. **12_cb_async_queries.py** - Async SQL++ queries with retry/profiling/timeouts
 
 ### 📁 Advanced Utilities
 
@@ -41,7 +42,7 @@ All scripts are numbered to show progression from basic to advanced:
 
 ### 📁 Tests
 
-- **tests/** - Unit tests for all scripts (123 tests total)
+- **tests/** - Unit tests for all scripts (149 tests total)
 - **run_tests.py** - Custom test runner with dependency mocking
 
 ### 📁 Data
@@ -250,6 +251,7 @@ python3 run_tests.py
 | 09_cb_fts_search.py | test_09_cb_fts_search.py |
 | 10_cb_debug_tracing.py | test_10_cb_debug_tracing.py |
 | 11_cb_async_operations.py | test_11_cb_async_operations.py |
+| 12_cb_async_queries.py | test_12_cb_async_queries.py |
 | advanced_prepared_statement_wrapper.py | test_advanced_prepared_statement_wrapper.py |
 | excel_to_json_to_cb.py | test_excel_to_json_to_cb.py |
 
@@ -460,11 +462,12 @@ from couchbase.exceptions import ServiceUnavailableException
 
 ## Testing Notes
 
-- **123 total tests** across 15 test files
+- **149 total tests** across 16 test files
 - Tests use mocking to avoid requiring live Couchbase cluster
 - `run_tests.py` handles dependency mocking automatically
 - All tests pass when run with `python3 run_tests.py`
 - Tests validate logic, not actual Couchbase operations
+- New tests added for 11_cb_async_operations.py and 12_cb_async_queries.py
 
 ---
 

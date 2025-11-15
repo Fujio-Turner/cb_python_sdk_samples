@@ -80,6 +80,7 @@ doc = {
     "callsign": "CBS",
     "iata": None,
     "icao": None,
+    "faa":"couchbase",
     "name": "Couchbase Airways",
     "timestamp":time.time()
 }
