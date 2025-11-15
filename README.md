@@ -17,7 +17,7 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Run your first sample
-python3 01_cb_set_get.py
+python3 01a_cb_set_get.py
 ```
 
 ## 📋 Prerequisites
@@ -30,8 +30,8 @@ python3 01_cb_set_get.py
 ## 📚 What's Included
 
 ### Core Operations (01-04)
-- **01** - Basic get/upsert operations
-- **01a** - Optimistic locking with CAS
+- **01a** - Basic get/upsert operations
+- **01b** - Optimistic locking with CAS
 - **02** - Upsert and delete
 - **03** - SQL++ (N1QL) queries
 - **04** - Subdocument operations

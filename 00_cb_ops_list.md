@@ -6,7 +6,7 @@ This repository contains comprehensive examples demonstrating various Couchbase 
 
 ## 📚 Sample Scripts
 
-### **01_cb_set_get.py** - Basic Get and Upsert Operations
+### **01a_cb_set_get.py** - Basic Get and Upsert Operations
 Demonstrates fundamental key-value operations:
 - Connect to Couchbase cluster (local and Capella configurations)
 - Upsert documents to a collection
@@ -18,7 +18,7 @@ Demonstrates fundamental key-value operations:
 
 ---
 
-### **01a_cb_get_update_w_cas.py** - Optimistic Locking with CAS
+### **01b_cb_get_update_w_cas.py** - Optimistic Locking with CAS
 Shows how to use Compare-And-Swap (CAS) for safe concurrent updates:
 - Retrieve document with CAS value
 - Update document using CAS for optimistic locking
@@ -431,7 +431,7 @@ cluster = Cluster(f'couchbases://{ENDPOINT}', options)  # Note: couchbaseS (secu
 
 4. Run individual scripts:
    ```bash
-   python3 01_cb_set_get.py
+   python3 01a_cb_set_get.py
    ```
 
 5. Check logs and output for results
