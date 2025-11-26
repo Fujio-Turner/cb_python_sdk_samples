@@ -7,6 +7,8 @@ The code demonstrates the following:
 - Retrieving a reference to a specific bucket, scope, and collection
 - Executing a SQL++ (N1QL) query with a parameter
 - Handling query exceptions and printing the query execution time
+- Using Query Profiling (QueryProfile.TIMINGS) to inspect execution steps and timings
+
 
 The code also includes a section with detailed documentation on the various options 
 available for the `Cluster.query()` method, which can be used to customize the behavior 
@@ -75,12 +77,13 @@ try:
         "SELECT meta().id , country FROM `travel-sample`.`inventory`.`airline` WHERE country = $country", 
         QueryOptions(named_parameters={"country": country}, profile=QueryProfile.TIMINGS)
     )
+
+    for row in query_result:
+        print(row)
+        
     end_time = time.time()
     query_time = end_time - start_time
     print(f"Query executed in {query_time:.4f} seconds")
-    for row in query_result:
-        print(row)
-
     print("\nQuery Profile:")
     print(json.dumps(query_result.metadata().profile(), indent=4))
 except Exception as e:
@@ -90,6 +93,19 @@ except Exception as e:
 print("\nClosing connection to Couchbase cluster...")
 cluster.close()
 
+"""
+QUERY PROFILING NOTE:
+The code above enables Query Profiling using `profile=QueryProfile.TIMINGS`. 
+This provides detailed information about the query execution steps and timing for each step, 
+which is printed to the console as a JSON object.
+
+IMPORTANT PERFORMANCE IMPACT:
+- Enabling profiling can significantly increase the size of the response (often by many kilobytes) 
+  due to the detailed timing JSON included.
+- This overhead can result in slower overall query execution times.
+- It is recommended to use this feature primarily for debugging and optimization purposes 
+  to understand query behavior, rather than in production for every query.
+"""
 
 
 '''

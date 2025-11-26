@@ -33,7 +33,8 @@ python3 01a_cb_set_get.py
 - **01a** - Basic get/upsert operations
 - **01b** - Optimistic locking with CAS
 - **02** - Upsert and delete
-- **03** - SQL++ (N1QL) queries
+- **03a** - SQL++ (N1QL) queries
+- **03b** - SQL++ query profiling
 - **04** - Subdocument operations
 
 ### Advanced Features (05-11)

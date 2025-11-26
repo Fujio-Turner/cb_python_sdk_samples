@@ -40,7 +40,7 @@ Demonstrates document lifecycle management:
 
 ---
 
-### **03_cb_query.py** - SQL++ (N1QL) Queries
+### **03a_cb_query.py** - SQL++ (N1QL) Queries
 Shows how to query Couchbase using SQL++ (formerly N1QL):
 - Execute parameterized queries
 - Query across scopes and collections
@@ -49,6 +49,18 @@ Shows how to query Couchbase using SQL++ (formerly N1QL):
 - Query performance measurement
 
 **Key Concepts**: SQL++/N1QL, parameterized queries, query metadata, scope/collection queries
+
+---
+
+### **03b_cb_query_profile.py** - SQL++ Query Profiling
+Demonstrates how to profile N1QL queries:
+- Use `QueryProfile.TIMINGS` to see detailed execution steps
+- Analyze time spent in each phase of query execution
+- Understand the performance impact of profiling (slower, larger payload)
+- Debug slow queries by inspecting the profiling data
+
+**Key Concepts**: Query profiling, timings, debugging, performance analysis
+
 
 ---
 

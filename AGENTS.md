@@ -17,9 +17,10 @@ All scripts are numbered to show progression from basic to advanced:
 1. **01_cb_set_get.py** - Basic get/upsert operations
 2. **01a_cb_get_update_w_cas.py** - CAS (Compare-And-Swap) optimistic locking
 3. **02_cb_upsert_delete.py** - Upsert and delete operations
-4. **03_cb_query.py** - SQL++ (N1QL) querying
-5. **04_cb_sub_doc_ops.py** - Subdocument operations (partial updates)
-6. **05_cb_exception_handling.py** - Comprehensive exception handling + CSV import
+4. **03a_cb_query.py** - SQL++ (N1QL) querying
+5. **03b_cb_query_profile.py** - SQL++ query profiling
+6. **04_cb_sub_doc_ops.py** - Subdocument operations (partial updates)
+7. **05_cb_exception_handling.py** - Comprehensive exception handling + CSV import
 7. **06_cb_get_retry_replica_read.py** - High availability with replica reads
 8. **07_cb_query_own_write.py** - Read-your-own-writes consistency
 9. **08a_cb_transaction_kv.py** - ACID transactions (key-value) with durability
@@ -241,7 +242,8 @@ python3 run_tests.py
 | 01_cb_set_get.py | test_01_cb_set_get.py |
 | 01a_cb_get_update_w_cas.py | test_01a_cb_get_update_w_cas.py |
 | 02_cb_upsert_delete.py | test_02_cb_upsert_delete.py |
-| 03_cb_query.py | test_03_cb_query.py |
+| 03a_cb_query.py | test_03a_cb_query.py |
+| 03b_cb_query_profile.py | test_03b_cb_query_profile.py |
 | 04_cb_sub_doc_ops.py | test_04_cb_sub_doc_ops.py |
 | 05_cb_exception_handling.py | test_05_cb_exception_handling.py |
 | 06_cb_get_retry_replica_read.py | test_06_cb_get_retry_replica_read.py |

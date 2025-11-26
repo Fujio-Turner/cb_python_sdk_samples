@@ -23,7 +23,8 @@ The test suite covers 14 Python sample files, providing comprehensive testing of
 | `test_01_cb_set_get.py` | `01_cb_set_get.py` | Tests basic set/get operations with timing |
 | `test_01a_cb_get_update_w_cas.py` | `01a_cb_get_update_w_cas.py` | Tests CAS-based updates and get operations |
 | `test_02_cb_upsert_delete.py` | `02_cb_upsert_delete.py` | Tests upsert and delete operations |
-| `test_03_cb_query.py` | `03_cb_query.py` | Tests N1QL query execution and parameters |
+| `test_03a_cb_query.py` | `03a_cb_query.py` | Tests N1QL query execution and parameters |
+| `test_03b_cb_query_profile.py` | `03b_cb_query_profile.py` | Tests N1QL query profiling |
 | `test_04_cb_sub_doc_ops.py` | `04_cb_sub_doc_ops.py` | Tests subdocument operations (lookup_in, mutate_in) |
 | `test_05_cb_exception_handling.py` | `05_cb_exception_handling.py` | Tests comprehensive exception handling scenarios |
 | `test_06_cb_get_retry_replica_read.py` | `06_cb_get_retry_replica_read.py` | Tests retry logic and replica read functionality |
