@@ -14,12 +14,14 @@ of SQL++ (N1QL) queries.
 """
 from datetime import timedelta
 import time
+import json
 
 # needed for any cluster connection
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
 # needed for options -- cluster, timeout, SQL++ (N1QL) query, etc.
-from couchbase.options import ClusterOptions
+from couchbase.options import ClusterOptions, QueryOptions
+from couchbase.n1ql import QueryProfile
 
 # Update this to your cluster
 # For local/self-hosted Couchbase Server:
@@ -69,12 +71,18 @@ country = "France"
 print("Query Results:")
 try:
     start_time = time.time()
-    query_result = cluster.query("SELECT meta().id , country FROM `travel-sample`.`inventory`.`airline` WHERE country = $country", country=country)
+    query_result = cluster.query(
+        "SELECT meta().id , country FROM `travel-sample`.`inventory`.`airline` WHERE country = $country", 
+        QueryOptions(named_parameters={"country": country}, profile=QueryProfile.TIMINGS)
+    )
     end_time = time.time()
     query_time = end_time - start_time
     print(f"Query executed in {query_time:.4f} seconds")
     for row in query_result:
         print(row)
+
+    print("\nQuery Profile:")
+    print(json.dumps(query_result.metadata().profile(), indent=4))
 except Exception as e:
     print(f"An error occurred during the query: {e}")
     
