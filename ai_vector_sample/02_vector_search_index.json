@@ -1,0 +1,73 @@
+
+
+{
+ "name": "vect",
+ "type": "fulltext-index",
+ "params": {
+  "doc_config": {
+   "docid_prefix_delim": "",
+   "docid_regexp": "",
+   "mode": "scope.collection.type_field",
+   "type_field": "type"
+  },
+  "mapping": {
+   "default_analyzer": "standard",
+   "default_datetime_parser": "dateTimeOptional",
+   "default_field": "_all",
+   "default_mapping": {
+    "dynamic": true,
+    "enabled": false
+   },
+   "default_type": "_default",
+   "docvalues_dynamic": false,
+   "index_dynamic": true,
+   "scoring_model": "tf-idf",
+   "store_dynamic": false,
+   "type_field": "_type",
+   "types": {
+    "us.orders": {
+     "dynamic": false,
+     "enabled": true,
+     "properties": {
+      "embedding": {
+       "enabled": true,
+       "dynamic": false,
+       "fields": [
+        {
+         "dims": 128,
+         "index": true,
+         "name": "embedding",
+         "similarity": "cosine",
+         "type": "vector",
+         "vector_index_optimized_for": "latency"
+        }
+       ]
+      }
+     }
+    }
+   }
+  },
+  "store": {
+   "indexType": "scorch",
+   "scorchMergePlanOptions": {
+    "floorSegmentFileSize": 139810133
+   },
+   "scorchPersisterOptions": {
+    "maxSizeInMemoryMergePerWorker": 419430400,
+    "numPersisterWorkers": 4
+   },
+   "segmentVersion": 16
+  }
+ },
+ "sourceType": "gocbcore",
+ "sourceName": "cake",
+ "sourceUUID": "bd03fbd614138991188110f8af8380f7",
+ "sourceParams": {},
+ "planParams": {
+  "maxPartitionsPerPIndex": 1024,
+  "indexPartitions": 1,
+  "numReplicas": 0
+ },
+ "uuid": "e1416b90964ec606"
+}
+

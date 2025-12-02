@@ -46,6 +46,12 @@ python3 01a_cb_set_get.py
 - **10** - Debugging, logging, slow ops detection, OpenTelemetry
 - **11** - **Async operations with class-based design** ⚡
 
+### AI & Vector Search
+- **[ai_vector_sample/](ai_vector_sample/)** - **New!** Vector Search Demo (Requires Couchbase Server 8.x+)
+  - Create Vector Indexes (Standard & Covering)
+  - Perform Similarity Search (KNN)
+  - Compare GSI vs FTS Vector Search
+
 ### Utilities
 - **advanced_prepared_statement_wrapper.py** - Query optimization
 - **excel_to_json_to_cb.py** - Bulk data import
@@ -55,6 +61,7 @@ python3 01a_cb_set_get.py
 | Feature | Script | Highlights |
 |---------|--------|------------|
 | **Async/Concurrent** | 11 | Class-based async client, 20 concurrent ops |
+| **Vector Search** | ai_vector_sample/ | Semantic search, RAG, vector embeddings |
 | **Transactions** | 08a, 08b | ACID compliance, multi-doc atomicity |
 | **Full-Text Search** | 09 | Auto-index creation, wildcards, boolean queries |
 | **High Availability** | 06 | Replica reads, retry logic, failover |

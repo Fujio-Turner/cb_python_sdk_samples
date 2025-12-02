@@ -119,6 +119,7 @@ def get_working_tests():
         'tests.test_03a_cb_query',
         'tests.test_03b_cb_query_profile',
         'tests.test_04_cb_sub_doc_ops',
+        'tests.test_ai_vector_search',
         'tests.test_05_cb_exception_handling',
         'tests.test_06_cb_get_retry_replica_read',
         'tests.test_09_cb_fts_search',
