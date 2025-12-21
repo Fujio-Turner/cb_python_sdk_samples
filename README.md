@@ -1,7 +1,6 @@
-# Couchbase Python SDK Samples
+# Couchbase Python SDK
 
-A comprehensive collection of **production-ready code samples** demonstrating the [Couchbase Python SDK 4.4.0](https://docs.couchbase.com/python-sdk/current/hello-world/start-using-sdk.html). Learn everything from basic CRUD operations to advanced features like transactions, full-text search, and async programming.
-
+A comprehensive collection **production-ready code samples demonstrating the [Couch Python SDK 4..0](https://.couchbase.com/python/current/hello-world/start-using.html). Learn everything from CRUD operations to advanced features transactions, full-text search and async programming.
 ## 🚀 Quick Start
 
 ```bash
@@ -149,3 +148,4 @@ MIT License - see [LICENSE](LICENSE)
 ---
 
 **SDK Version**: 4.4.0 | **Python**: 3.8+ | **Author**: Fujio Turner
+

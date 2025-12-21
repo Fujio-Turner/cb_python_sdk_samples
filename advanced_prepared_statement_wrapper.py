@@ -1,9 +1,7 @@
 """
-Execute a prepared statement in Couchbase using adhoc=False for optimal performance.
-
-This wrapper automatically handles prepared statement caching by leveraging the SDK's
-built-in prepared statement management. When adhoc=False, the SDK will prepare and
-cache the query plan, significantly improving performance for repeated queries.
+Execute a prepared in Couchbase using adhoc=False for optimal performance.\nThis wrapper automatically handles statement caching by leveraging the's
+built-in prepared management. When adhoc, the SDK will prepare
+cache the query plan significantly improving performance for repeated.
 
 Args:
     cluster_or_scope: Couchbase Cluster or Scope object (NOT Collection)
@@ -149,7 +147,7 @@ def run_cb_prepared(
                 print(f"Query failed after {attempts} attempts due to server error")
                 raise
         
-
+        
         
         except AuthenticationException as e:
             # Authentication failure - don't retry

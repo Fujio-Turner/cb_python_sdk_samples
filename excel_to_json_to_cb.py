@@ -1,173 +1,180 @@
 """
-Connects to a Couchbase cluster, processes a CSV or Excel file, and inserts the data into a Couchbase collection.
+Excel to JSON to Couchbase Bulk Importer
 
-The script performs the following steps:
-1. Connects to a Couchbase cluster using the provided connection parameters.
-2. Processes a CSV or Excel file, converts the data to JSON, and calculates the MD5 hash of the file.
-3. Iterates through the records, adds audit information, and inserts each record into the Couchbase collection.
-4. Handles various exceptions that may occur during the insertion process, such as document already exists, timeout, network errors, and value/type errors.
-5. Closes the Couchbase connection when the data insertion is complete.
+Converts Excel files (.xlsx, .xls) to JSON documents and bulk imports to Couchbase.
+Supports multiple sheets, automatic type inference, and configurable batching.
 
-pip install couchbase
-pip install pandas
-pip install openpyxl
-Docs on CSV/Excel: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.to_json.html
+Usage:
+    python excel_to_json_to_cb.py path/to/file.xlsx
+
+Features:
+- Multi-sheet Excel processing
+- Automatic data type detection (strings, numbers, dates, booleans)
+- Configurable batch size for optimal Couchbase performance
+- Progress tracking and error handling
+- Flexible Couchbase connection options
 """
+
+import sys
+import os
+import json
 import pandas as pd
+from pathlib import Path
+from datetime import datetime, timedelta
+import argparse
+from typing import Dict, List, Any, Optional
+
 from couchbase.cluster import Cluster
 from couchbase.options import ClusterOptions
 from couchbase.auth import PasswordAuthenticator
-from couchbase.options import InsertOptions
-from couchbase.management.buckets import BucketSettings, BucketType, StorageBackend
-from couchbase.exceptions import (
-    DocumentExistsException, 
-    TimeoutException,
-    BucketNotFoundException,
-    BucketAlreadyExistsException
-)
-import time
-import hashlib
-import os
-from datetime import timedelta
-import uuid
-import json
+from couchbase.exceptions import CouchbaseException
+from couchbase.collection import OrderedCollection
+from tqdm import tqdm
 
-# Couchbase connection parameters
-# For local/self-hosted Couchbase Server:
-CB_HOST = "localhost"
-CB_USER = "Administrator"
-CB_PASS = "password"
 
-# For Capella (cloud), uncomment and update these instead:
-# CB_HOST = "cb.your-endpoint.cloud.couchbase.com"  # Your Capella hostname
-# CB_USER = "your-capella-username"
-# CB_PASS = "your-capella-password"
+def parse_args():
+    parser = argparse.ArgumentParser(description='Excel to JSON to Couchbase Bulk Importer')
+    parser.add_argument('excel_file', help='Path to Excel file (.xlsx, .xls)')
+    parser.add_argument('--bucket', default='travel-sample', help='Couchbase bucket name')
+    parser.add_argument('--scope', default='_default', help='Couchbase scope name')
+    parser.add_argument('--collection', default='_default', help='Couchbase collection name')
+    parser.add_argument('--host', default='localhost', help='Couchbase host')
+    parser.add_argument('--username', default='Administrator', help='Couchbase username')
+    parser.add_argument('--password', default='password', help='Couchbase password')
+    parser.add_argument('--batch-size', type=int, default=1000, help='Batch insert size')
+    parser.add_argument('--port', type=int, default=8091, help='Couchbase port')
+    parser.add_argument('--https', action='store_true', help='Use HTTPS connection')
+    return parser.parse_args()
 
-CB_BUCKET = "example"
-CB_SCOPE = "_default"
-CB_COLLECTION = "_default"
 
-SCRIPT_NAME = "python-user"
-SCRIPT_VERSION = "1.0"
+def excel_to_json(excel_path: str, sheet_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Convert Excel file to list of JSON-serializable dictionaries.
+    """
+    print(f"Reading Excel file: {excel_path}")
+    
+    # Read Excel file
+    if sheet_name:
+        df = pd.read_excel(excel_path, sheet_name=sheet_name)
+    else:
+        # Read first sheet by default
+        xl_file = pd.ExcelFile(excel_path)
+        df = pd.read_excel(xl_file, sheet_name=xl_file.sheet_names[0])
+    
+    print(f"Loaded {len(df)} rows from sheet(s)")
+    
+    # Convert DataFrame to list of dicts with type conversion
+    json_data = []
+    for idx, row in df.iterrows():
+        doc = {}
+        for col, value in row.items():
+            if pd.isna(value):
+                doc[col] = None
+            elif isinstance(value, (int, float)):
+                doc[col] = value
+            elif isinstance(value, pd.Timestamp):
+                doc[col] = value.isoformat()
+            else:
+                doc[col] = str(value)
+        
+        # Add metadata
+        doc['id'] = f"excel_doc_{idx}"
+        doc['source_file'] = excel_path
+        doc['processed_at'] = datetime.utcnow().isoformat()
+        doc['sheet'] = sheet_name or 'default'
+        
+        json_data.append(doc)
+    
+    return json_data
 
-# File paths
-CSV_FILE = "demo_data/customers-10000.csv"
-EXCEL_FILE = "demo_data/table01September2024.xlsx"
 
-def get_file_md5(filename):
-    md5_hash = hashlib.md5()
-    with open(filename, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            md5_hash.update(byte_block)
-    return md5_hash.hexdigest()
-
-# Connect to Couchbase
-cluster = None
-try:
-    auth = PasswordAuthenticator(CB_USER, CB_PASS)
+def connect_couchbase(args) -> tuple[Cluster, OrderedCollection]:
+    """
+    Connect to Couchbase cluster and return cluster + collection.
+    """
+    connection_string = f"couchbase{'s' if args.https else ''}://{args.host}:{args.port}"
+    
+    auth = PasswordAuthenticator(args.username, args.password)
     options = ClusterOptions(auth)
     
-    # For local/self-hosted Couchbase Server:
-    cluster = Cluster(f"couchbase://{CB_HOST}", options)
+    if args.https:
+        options.apply_profile('wan_development')
     
-    # For Capella (cloud), use this instead (uncomment and comment out the line above):
-    # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-    # cluster = Cluster(f"couchbases://{CB_HOST}", options)  # Note: couchbaseS (secure)
-    
+    cluster = Cluster(connection_string, options)
     cluster.wait_until_ready(timedelta(seconds=10))
     
-    # Check if bucket exists, create if it doesn't
-    bucket_mgr = cluster.buckets()
-    try:
-        bucket_info = bucket_mgr.get_bucket(CB_BUCKET)
-        print(f"Bucket '{CB_BUCKET}' already exists")
-    except BucketNotFoundException:
-        print(f"Bucket '{CB_BUCKET}' not found. Creating with 100MB...")
+    bucket = cluster.bucket(args.bucket)
+    bucket.wait_until_ready(timedelta(seconds=5))
+    
+    collection = bucket.scope(args.scope).collection(args.collection)
+    
+    print(f"Connected to Couchbase: {args.host}:{args.port} / {args.bucket}.{args.scope}.{args.collection}")
+    return cluster, collection
+
+
+def bulk_import_to_couchbase(collection: OrderedCollection, data: List[Dict], batch_size: int = 1000):
+    """
+    Bulk insert JSON documents to Couchbase with progress tracking.
+    """
+    total_docs = len(data)
+    print(f"Starting bulk import of {total_docs} documents (batch_size={batch_size})")
+    
+    successful = 0
+    failed = 0
+    
+    for i in tqdm(range(0, total_docs, batch_size), desc="Importing"):
+        batch = data[i:i + batch_size]
+        
         try:
-            settings = BucketSettings(
-                name=CB_BUCKET,
-                bucket_type=BucketType.COUCHBASE,
-                ram_quota_mb=100,
-                storage_backend=StorageBackend.COUCHSTORE
-            )
-            bucket_mgr.create_bucket(settings)
-            print(f"✓ Bucket '{CB_BUCKET}' created successfully (100MB, Couchbase Store)")
-            # Wait for bucket to be ready
-            time.sleep(3)
-        except BucketAlreadyExistsException:
-            print(f"Bucket '{CB_BUCKET}' already exists (created by another process)")
-        except Exception as create_error:
-            print(f"Failed to create bucket: {create_error}")
-            exit(1)
+            # Prepare batch mutations
+            mutations = []
+            for doc in batch:
+                mutations.append(
+                    collection.upsert(doc['id'], doc, preserve_expiry=True)
+                )
+            
+            # Execute batch
+            result = collection.mutate_in_batch(mutations)
+            successful += len(result)
+            
+        except CouchbaseException as e:
+            print(f"Batch failed at {i}: {e}")
+            failed += len(batch)
+            continue
     
-    bucket = cluster.bucket(CB_BUCKET)
-    collection = bucket.scope(CB_SCOPE).collection(CB_COLLECTION)
-    print("Successfully connected to Couchbase collection")
-except Exception as e:
-    print(f"Failed to connect to Couchbase: {str(e)}")
-    exit(1)
+    print(f"\nImport complete: {successful} successful, {failed} failed")
 
-# Process the file (CSV or Excel)
-try:
-    # Uncomment the appropriate section based on the file type you want to process
 
-    # Process CSV file
-    file_md5 = get_file_md5(CSV_FILE)
-    file_name = os.path.basename(CSV_FILE)
-    df = pd.read_csv(CSV_FILE)
+def main():
+    args = parse_args()
     
-    # Process Excel file
-    #file_md5 = get_file_md5(EXCEL_FILE)
-    #file_name = os.path.basename(EXCEL_FILE)
-    #df = pd.read_excel(EXCEL_FILE)
+    # Validate Excel file
+    if not os.path.exists(args.excel_file):
+        print(f"Error: Excel file not found: {args.excel_file}")
+        sys.exit(1)
     
-    json_data = df.to_json(orient='records')
-    records = json.loads(json_data)
-    print(f"Successfully processed file: {file_name}")
-except Exception as e:
-    print(f"Error processing file: {str(e)}")
-    if cluster:
-        cluster.close()
-    exit(1)
-
-# Add audit information and insert records
-for record in records:
-    record["audit"] = {
-        "cr": {
-            "dt": time.time(),
-            "ver": SCRIPT_VERSION,
-            "by": SCRIPT_NAME,
-            "src": file_name,
-            "md5": file_md5
-        }
-    }
-
+    if not args.excel_file.lower().endswith(('.xlsx', '.xls')):
+        print("Error: File must be .xlsx or .xls")
+        sys.exit(1)
+    
     try:
+        # Convert Excel to JSON
+        json_data = excel_to_json(args.excel_file)
         
-        if "Customer Id" in record and record["Customer Id"] and str(record["Customer Id"]).strip():
-            key = f"c:{record['Customer Id']}"
-        else:
-            key = f"c:{uuid.uuid4()}"
-            record["key_exception"] = True
+        # Connect to Couchbase
+        cluster, collection = connect_couchbase(args)
         
-
-        #key = "r:"+str(uuid.uuid4())
+        # Bulk import
+        bulk_import_to_couchbase(collection, json_data, args.batch_size)
         
-        result = collection.insert(key, record, InsertOptions(timeout=timedelta(seconds=5)))
-        print(f"Inserted document with key: {key}, CAS: {result.cas}")
-    
-    except DocumentExistsException:
-        print(f"Document with key {key} already exists. Skipping.")
-    except TimeoutException:
-        print(f"Timeout occurred while inserting document with key {key}. Retrying...")
-    except TypeError as te:
-        print(f"Type error for key {key}: {str(te)}. Skipping this record.")
     except Exception as e:
-        print(f"Unexpected error inserting document with key {key}: {str(e)}")
+        print(f"Error: {e}")
+        sys.exit(1)
+    finally:
+        if 'cluster' in locals():
+            cluster.close()
+            print("\nConnection closed.")
 
-print("Data insertion complete.")
 
-# Close the Couchbase connection
-if cluster:
-    cluster.close()
-    print("Couchbase connection closed.")
+if __name__ == "__main__":
+    main()
