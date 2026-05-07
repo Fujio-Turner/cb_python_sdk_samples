@@ -42,7 +42,7 @@ python3 01a_cb_set_get.py
 - **07** - Read-your-own-writes consistency
 - **08a/08b** - ACID transactions (KV & Query)
 - **09** - Full-text search with auto-index creation
-- **10** - Debugging, logging, slow ops detection, OpenTelemetry
+- **10** - Debugging, logging, slow ops detection, **orphaned request reporting**, OpenTelemetry
 - **11** - **Async operations with class-based design** ⚡
 
 ### AI & Vector Search
@@ -64,7 +64,7 @@ python3 01a_cb_set_get.py
 | **Transactions** | 08a, 08b | ACID compliance, multi-doc atomicity |
 | **Full-Text Search** | 09 | Auto-index creation, wildcards, boolean queries |
 | **High Availability** | 06 | Replica reads, retry logic, failover |
-| **Debugging** | 10 | Slow ops logging, OpenTelemetry tracing |
+| **Debugging** | 10 | Slow ops logging, orphan response reporter, OpenTelemetry tracing |
 | **Error Handling** | 05 | All exception types with examples |
 | **Performance** | 11, advanced_* | Prepared statements, async, subdocs |
 

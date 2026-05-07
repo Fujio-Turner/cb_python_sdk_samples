@@ -4,25 +4,35 @@ Demonstrates debugging and tracing Couchbase operations using logging and OpenTe
 This script shows how to:
 1. Configure Python logging to capture Couchbase SDK logs
 2. Enable slow operations logging (threshold tracing)
-3. Set up OpenTelemetry for distributed tracing
-4. Trace individual operations with custom spans
-5. Log errors and exceptions for debugging
-6. Export trace data to console (can be changed to Jaeger, Zipkin, etc.)
+3. Enable Orphaned Request Reporting (catch responses that arrive after a client timeout)
+4. Set up OpenTelemetry for distributed tracing
+5. Trace individual operations with custom spans
+6. Log errors and exceptions for debugging
+7. Export trace data to console (can be changed to Jaeger, Zipkin, etc.)
 
-Logging vs Tracing:
+Logging vs Tracing vs Orphan Reporting:
 - Logging: Good for debugging individual events and errors
 - Slow Operations Logging: Automatically logs operations exceeding time thresholds
+- Orphaned Request Reporting: Logs responses for requests the client already gave up on
+  (i.e. the operation timed out client-side, but the server eventually finished it).
+  Useful to detect timeouts that are too aggressive, slow nodes, or network lag.
 - OpenTelemetry Tracing: Good for understanding request flow and performance across services
 
 Use Cases:
 - Debugging slow operations (identify performance bottlenecks)
+- Detecting "lag" between client and server (orphaned responses)
 - Monitoring application health
 - Performance profiling
 - Production troubleshooting
 - Distributed system observability
+
+Reference docs:
+- https://docs.couchbase.com/python-sdk/current/howtos/slow-operations-logging.html
+- https://docs.couchbase.com/python-sdk/current/howtos/observability-orphan-logger.html
 """
 
 import logging
+import time
 import traceback
 from datetime import timedelta
 
@@ -31,8 +41,19 @@ import couchbase
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
 from couchbase.diagnostics import ServiceType
-from couchbase.exceptions import CouchbaseException
-from couchbase.options import ClusterOptions, WaitUntilReadyOptions, ClusterTracingOptions
+from couchbase.exceptions import (
+    CouchbaseException,
+    TimeoutException,
+    AmbiguousTimeoutException,
+    UnAmbiguousTimeoutException,
+)
+from couchbase.options import (
+    ClusterOptions,
+    WaitUntilReadyOptions,
+    ClusterTracingOptions,
+    UpsertOptions,
+    QueryOptions,
+)
 
 # OpenTelemetry imports
 from opentelemetry import trace
@@ -52,6 +73,8 @@ logging.basicConfig(
 logger = logging.getLogger()  # Get the root logger
 
 # Configure Couchbase SDK to use our logger
+# This is the bridge that lets the threshold logger AND the orphan reporter
+# emit their JSON forensic reports through Python's logging module.
 couchbase.configure_logging(logger.name, level=logger.level)
 
 # Set up OpenTelemetry
@@ -79,15 +102,27 @@ BUCKET_NAME = "travel-sample"
 CB_SCOPE = "inventory"
 CB_COLLECTION = "airline"
 
-# Configure slow operations logging thresholds
-# Operations slower than these thresholds will be automatically logged
+# Configure slow operations logging thresholds AND orphan response reporting.
+# `ClusterTracingOptions` controls TWO independent reporters:
+#   1. Threshold logger  - any op slower than tracing_threshold_* is logged
+#                          as a JSON forensic report (server time, dispatch, etc.)
+#   2. Orphan reporter   - any response that arrives AFTER the client gave up
+#                          (timed out) is logged as a JSON orphan report.
 tracing_opts = ClusterTracingOptions(
+    # ---- Slow operation thresholds ----
     tracing_threshold_queue_size=10,  # Log if queue size exceeds 10
     tracing_threshold_kv=timedelta(milliseconds=100),  # Log KV ops slower than 100ms
     tracing_threshold_query=timedelta(milliseconds=500),  # Log queries slower than 500ms
     tracing_threshold_search=timedelta(milliseconds=500),  # Log search ops slower than 500ms
     tracing_threshold_analytics=timedelta(seconds=1),  # Log analytics ops slower than 1s
-    tracing_threshold_view=timedelta(seconds=1)  # Log view ops slower than 1s
+    tracing_threshold_view=timedelta(seconds=1),  # Log view ops slower than 1s
+
+    # ---- Orphaned request reporter ----
+    # Flush the orphan queue every 5s and keep up to 1024 orphan samples.
+    # When the client times out but the server later replies, the late
+    # response is captured here so you can see "ghost" operations.
+    tracing_orphaned_queue_flush_interval=timedelta(seconds=5),
+    tracing_orphaned_queue_size=1024,
 )
 
 
@@ -102,9 +137,10 @@ def perform_couchbase_operations():
         auth = PasswordAuthenticator(USERNAME, PASSWORD)
         
         # Create ClusterOptions with tracing enabled for slow operations logging
+        # AND orphaned request reporting (both come from `tracing_opts`).
         options = ClusterOptions(
             authenticator=auth,
-            tracing_options=tracing_opts  # Enable slow operations logging
+            tracing_options=tracing_opts
         )
         
         # For local/self-hosted Couchbase Server:
@@ -191,19 +227,19 @@ def perform_couchbase_operations():
                 logger.error(traceback.format_exc())
                 print(f"✗ Query failed: {e}")
         
-        # Example 6: Demonstrate slow operation logging with artificial delay
-        print("\n--- Example 6: Slow Operation Detection ---")
+        # Example 5: Demonstrate slow operation logging with artificial delay
+        print("\n--- Example 5: Slow Operation Detection ---")
         print("(Operations slower than threshold will be logged in JSON format)")
         with tracer.start_as_current_span("slow_operation_demo"):
             try:
-                # Force a slow query with sleep to trigger threshold logging
+                # Force a slow query with SLEEP() to trigger threshold logging
                 slow_query = f"""
-                SELECT SLEEP(200) AS delay, name, country 
+                SELECT SLEEP(750) AS delay, name, country 
                 FROM `{BUCKET_NAME}`.{CB_SCOPE}.{CB_COLLECTION} 
                 WHERE country = 'United States' 
                 LIMIT 1
                 """
-                logger.info(f"Executing intentionally slow query (200ms delay)")
+                logger.info(f"Executing intentionally slow query (~750ms delay)")
                 result = cluster.query(slow_query)
                 rows = list(result)
                 logger.info(f"✓ Slow query completed")
@@ -212,9 +248,52 @@ def perform_couchbase_operations():
             except CouchbaseException as e:
                 logger.error(f"Slow query error: {e}")
                 print(f"✗ Slow query failed: {e}")
-        
-        # Example 5: Cleanup - Remove test document
-        print("\n--- Example 5: Cleanup (Remove Test Document) ---")
+
+        # Example 6: Demonstrate ORPHANED REQUEST REPORTING
+        # An "orphan" is a response from the server that arrives AFTER the
+        # client already gave up on the request (i.e. it timed out client-side).
+        # We force this by setting an unrealistically tiny 1-microsecond timeout:
+        # the client is guaranteed to time out, but the server still completes
+        # the work — that late response becomes an orphan, and the SDK's
+        # orphan reporter will flush a JSON report listing those operations.
+        print("\n--- Example 6: Orphaned Request Reporting ---")
+        print("(Forcing client timeouts to generate orphan responses)")
+        with tracer.start_as_current_span("orphan_request_demo"):
+            for i in range(10):
+                doc_key = f"orphan_demo_{i}"
+                try:
+                    coll.upsert(
+                        doc_key,
+                        {"i": i, "demo": "orphan"},
+                        UpsertOptions(timeout=timedelta(microseconds=1)),
+                    )
+                except (TimeoutException,
+                        AmbiguousTimeoutException,
+                        UnAmbiguousTimeoutException) as ex:
+                    # ex.context is the forensic JSON ("r"=remote, "s"=service, etc.)
+                    logger.warning(
+                        f"Client timed out on '{doc_key}' (expected). "
+                        f"context={getattr(ex, 'context', None)}"
+                    )
+
+            # Same idea for a query — too-low timeout = orphan candidate.
+            try:
+                cluster.query(
+                    f"SELECT META().id FROM `{BUCKET_NAME}`.{CB_SCOPE}.{CB_COLLECTION} LIMIT 50",
+                    QueryOptions(timeout=timedelta(microseconds=1)),
+                ).execute()
+            except CouchbaseException as ex:
+                logger.warning(
+                    f"Client timed out on query (expected): {type(ex).__name__}"
+                )
+
+        print("✓ Issued ops with 1µs timeout to provoke orphan responses")
+        print("  The orphan reporter flushes every 5s. Look for a log line like:")
+        print("  'Orphan responses observed: { ... JSON ... }' listing operations")
+        print("  the server completed AFTER the client gave up.")
+
+        # Example 7: Cleanup - Remove test document
+        print("\n--- Example 7: Cleanup (Remove Test Document) ---")
         with tracer.start_as_current_span("remove_document"):
             try:
                 logger.info(f"Removing test document '{test_key}'")
@@ -227,6 +306,11 @@ def perform_couchbase_operations():
         
         logger.info("=== All operations completed ===")
         print("\n✓ All operations completed successfully")
+
+        # Give the orphan reporter time to flush before we close the cluster.
+        # Flush interval is set to 5s above, so we wait a bit longer.
+        print("\nWaiting 7s so the orphan reporter can flush its queue...")
+        time.sleep(7)
         
     except CouchbaseException as e:
         logger.error(f"Couchbase operation failed: {e}")
@@ -249,12 +333,15 @@ if __name__ == "__main__":
     print("\nThis script demonstrates:")
     print("  1. Logging Couchbase operations to file (couchbase_example.log)")
     print("  2. Slow operations logging (threshold-based automatic detection)")
-    print("  3. OpenTelemetry tracing with console export")
-    print("  4. Error handling and debugging patterns")
+    print("  3. Orphaned request reporting (responses after client timeout)")
+    print("  4. OpenTelemetry tracing with console export")
+    print("  5. Error handling and debugging patterns")
     print("\nSlow Operation Thresholds:")
     print("  - KV operations: > 100ms")
     print("  - Query operations: > 500ms")
     print("  - Search/Analytics: > 500ms/1s")
+    print("\nOrphan Reporter:")
+    print("  - Flush interval: 5s   |   Queue size: 1024")
     print("\nTrace output will appear below, followed by operation results.\n")
     
     perform_couchbase_operations()
@@ -267,4 +354,6 @@ if __name__ == "__main__":
     print("    - total_duration_us: Total operation time")
     print("    - last_server_duration_us: Server processing time")
     print("    - operation_name: Type of operation (get, upsert, query, etc.)")
+    print("✓ Orphan responses log - JSON listing late server replies for")
+    print("  operations the client had already timed out on.")
     print("=" * 70)
