@@ -185,12 +185,16 @@ class TestCbExceptionHandling(unittest.TestCase):
         with patch('couchbase.cluster.Cluster') as mock_cluster_class:
             mock_cluster_class.side_effect = Exception("Connection failed")
             
+            # Create the objects that would be passed to Cluster
+            from couchbase.options import ClusterOptions
+            from couchbase.auth import PasswordAuthenticator
+            
+            auth = PasswordAuthenticator("user", "pass")
+            options = ClusterOptions(auth)
+            
             with self.assertRaises(Exception) as context:
-                from couchbase.cluster import Cluster
-                from couchbase.options import ClusterOptions
-                from couchbase.auth import PasswordAuthenticator
-                
-                Cluster("couchbase://localhost", ClusterOptions(PasswordAuthenticator("user", "pass")))
+                # Call the mocked Cluster class directly
+                mock_cluster_class("couchbase://localhost", options)
             
             self.assertIn("Connection failed", str(context.exception))
 

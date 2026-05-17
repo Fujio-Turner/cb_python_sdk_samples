@@ -242,14 +242,20 @@ Production-ready query optimization wrapper:
 ---
 
 ### **excel_to_json_to_cb.py** - Data Import from Excel/CSV
-Demonstrates bulk data import:
-- Read data from Excel or CSV files
-- Convert to JSON format
-- Bulk insert to Couchbase
-- Add audit metadata (timestamps, source tracking)
-- Handle import errors gracefully
+Production-ready bulk data importer with comprehensive logging and error handling:
+- Read data from Excel (.xlsx, .xls) files
+- Convert to JSON format with automatic type detection
+- Bulk insert to Couchbase with configurable batching
+- Add audit metadata (timestamps, source file, sheet name, row index)
+- Comprehensive logging to file (`excel_import.log`) and console
+- Proper exception handling (ServiceUnavailableException, TimeoutException, etc.)
+- Support for both local Couchbase and Capella (cloud) connections
+- Multi-sheet processing with `--all-sheets` flag
+- Dry-run mode (`--dry-run`) for testing without database writes
+- Error summary file generation for failed imports
+- Column name sanitization and document ID generation
 
-**Key Concepts**: Bulk import, data migration, audit trails, pandas integration
+**Key Concepts**: Bulk import, data migration, audit trails, pandas integration, logging, exception handling, Capella support
 
 ---
 

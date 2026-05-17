@@ -91,19 +91,20 @@ class TestDebugTracing(unittest.TestCase):
     
     def test_cluster_connection_setup(self):
         """Test cluster connection setup."""
-        with patch('couchbase.cluster.Cluster') as mock_cluster_class, \
-             patch('couchbase.options.ClusterOptions') as mock_options, \
-             patch('couchbase.auth.PasswordAuthenticator') as mock_auth:
-            
-            # Mock components
+        # Patch at module level before any imports
+        with patch.dict('sys.modules', {'couchbase': Mock(), 'couchbase.auth': Mock(), 'couchbase.cluster': Mock(), 'couchbase.options': Mock()}):
+            # Create mock instances
             mock_auth_instance = Mock()
-            mock_auth.return_value = mock_auth_instance
             mock_options_instance = Mock()
-            mock_options.return_value = mock_options_instance
             mock_cluster_instance = Mock()
-            mock_cluster_class.return_value = mock_cluster_instance
             
-            # Test connection setup
+            # Set up the mock modules
+            import sys
+            sys.modules['couchbase.auth'].PasswordAuthenticator = Mock(return_value=mock_auth_instance)
+            sys.modules['couchbase.options'].ClusterOptions = Mock(return_value=mock_options_instance)
+            sys.modules['couchbase.cluster'].Cluster = Mock(return_value=mock_cluster_instance)
+            
+            # Now import and test
             from couchbase.auth import PasswordAuthenticator
             from couchbase.cluster import Cluster
             from couchbase.options import ClusterOptions
@@ -112,10 +113,10 @@ class TestDebugTracing(unittest.TestCase):
             options = ClusterOptions(auth)
             cluster = Cluster('couchbase://your-ip', options)
             
-            # Verify calls
-            mock_auth.assert_called_once_with("Administrator", "password")
-            mock_options.assert_called_once_with(mock_auth_instance)
-            mock_cluster_class.assert_called_once_with('couchbase://your-ip', mock_options_instance)
+            # Verify the mocks were called
+            sys.modules['couchbase.auth'].PasswordAuthenticator.assert_called_once_with("Administrator", "password")
+            sys.modules['couchbase.options'].ClusterOptions.assert_called_once_with(auth)
+            sys.modules['couchbase.cluster'].Cluster.assert_called_once_with('couchbase://your-ip', options)
     
     def test_wait_until_ready_configuration(self):
         """Test wait_until_ready configuration."""
@@ -213,21 +214,25 @@ class TestDebugTracing(unittest.TestCase):
     
     def test_cluster_connection_in_perform_operations(self):
         """Test cluster connection within perform_couchbase_operations."""
-        with patch('couchbase.cluster.Cluster') as mock_cluster_class:
-            # Mock cluster
+        with patch.dict('sys.modules', {'couchbase': Mock(), 'couchbase.auth': Mock(), 'couchbase.cluster': Mock(), 'couchbase.options': Mock()}):
+            # Create mock instances
             mock_cluster_instance = Mock()
-            mock_cluster_class.return_value = mock_cluster_instance
+            
+            # Set up the mock
+            import sys
+            sys.modules['couchbase.cluster'].Cluster = Mock(return_value=mock_cluster_instance)
             
             # Test cluster creation
             from couchbase.cluster import Cluster
             from couchbase.options import ClusterOptions
             from couchbase.auth import PasswordAuthenticator
             
-            cluster = Cluster('couchbase://your-ip', 
-                            ClusterOptions(PasswordAuthenticator("Administrator", "password")))
+            auth = PasswordAuthenticator("Administrator", "password")
+            options = ClusterOptions(auth)
+            cluster = Cluster('couchbase://your-ip', options)
             
             # Verify cluster was created
-            mock_cluster_class.assert_called_once()
+            sys.modules['couchbase.cluster'].Cluster.assert_called_once()
     
     def test_main_function_execution(self):
         """Test main function execution."""

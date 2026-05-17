@@ -34,12 +34,15 @@ class TestAsyncOperations(unittest.TestCase):
     def test_async_cluster_connect(self):
         """Test async cluster connection."""
         async def test_connect():
-            with patch('acouchbase.cluster.Cluster.connect', new_callable=AsyncMock) as mock_connect:
-                mock_cluster = AsyncMock()
-                mock_connect.return_value = mock_cluster
-                
+            # Create a proper AsyncMock for the connect method
+            mock_connect = AsyncMock()
+            mock_cluster = AsyncMock()
+            mock_connect.return_value = mock_cluster
+            
+            with patch.object(sys.modules['acouchbase.cluster'].Cluster, 'connect', mock_connect):
                 from acouchbase.cluster import Cluster
-                cluster = await Cluster.connect('couchbase://localhost', MagicMock())
+                options = AsyncMock()
+                cluster = await Cluster.connect('couchbase://localhost', options)
                 
                 self.assertIsNotNone(cluster)
                 mock_connect.assert_awaited_once()

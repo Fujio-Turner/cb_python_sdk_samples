@@ -14,36 +14,41 @@ This repository contains **sample code demonstrating the Couchbase Python SDK** 
 
 All scripts are numbered to show progression from basic to advanced:
 
-1. **01_cb_set_get.py** - Basic get/upsert operations
-2. **01a_cb_get_update_w_cas.py** - CAS (Compare-And-Swap) optimistic locking
+1. **01a_cb_set_get.py** - Basic get/upsert operations
+2. **01b_cb_get_update_w_cas.py** - CAS (Compare-And-Swap) optimistic locking
 3. **02_cb_upsert_delete.py** - Upsert and delete operations
 4. **03a_cb_query.py** - SQL++ (N1QL) querying
 5. **03b_cb_query_profile.py** - SQL++ query profiling
 6. **04_cb_sub_doc_ops.py** - Subdocument operations (partial updates)
-7. **05_cb_exception_handling.py** - Comprehensive exception handling + CSV import
-7. **06_cb_get_retry_replica_read.py** - High availability with replica reads
-8. **07_cb_query_own_write.py** - Read-your-own-writes consistency
-9. **08a_cb_transaction_kv.py** - ACID transactions (key-value) with durability
-10. **08b_cb_transaction_query.py** - ACID transactions (queries) with durability
-11. **09_cb_fts_search.py** - Full-text search (SQL++ SEARCH & Native SDK API)
-12. **10_cb_debug_tracing.py** - Logging, slow ops detection, OpenTelemetry
-13. **11_cb_async_operations.py** - Async KV operations with retry/observability
-14. **12_cb_async_queries.py** - Async SQL++ queries with retry/profiling/timeouts
+5. **05_cb_exception_handling.py** - Comprehensive exception handling + CSV import
+6. **06_cb_get_retry_replica_read.py** - High availability with replica reads
+7. **07_cb_query_own_write.py** - Read-your-own-writes consistency
+8. **08a_cb_transaction_kv.py** - ACID transactions (key-value) with durability
+9. **08b_cb_transaction_query.py** - ACID transactions (queries) with durability
+10. **09_cb_fts_search.py** - Full-text search (SQL++ SEARCH & Native SDK API)
+11. **10_cb_debug_tracing.py** - Logging, slow ops detection, OpenTelemetry, orphaned request reporting
+12. **11_cb_async_operations.py** - Async KV operations with class-based design
+13. **12_cb_async_queries.py** - Async SQL++ queries with retry/profiling/timeouts
+14. **13_cb_increment.py** - Atomic counter operations (increment/decrement)
 
 ### 📁 Advanced Utilities
 
 - **advanced_prepared_statement_wrapper.py** - Query optimization with prepared statements
 - **excel_to_json_to_cb.py** - Bulk data import from Excel/CSV
 
+### 📁 AI & Vector Search
+
+- **ai_vector_sample/** - Vector search demo with KNN similarity, embeddings, and RAG patterns (requires Couchbase 8.x+)
+
 ### 📁 Documentation
 
 - **README.md** - Main documentation
-- **00_cb_ops_list.md** - Comprehensive operations reference (all 12 scripts)
+- **00_cb_ops_list.md** - Comprehensive operations reference (all 14 scripts)
 - **advanced_multi_docs.md** - Multi-operation patterns (batch operations)
 
 ### 📁 Tests
 
-- **tests/** - Unit tests for all scripts (149 tests total)
+- **tests/** - Unit tests for all scripts (with dependency mocking)
 - **run_tests.py** - Custom test runner with dependency mocking
 
 ### 📁 Data
@@ -222,7 +227,7 @@ content = result.content_as[dict]  # For JSON documents
 
 - **Unit tests**: Mock Couchbase SDK to test logic without live cluster
 - **run_tests.py**: Custom runner that mocks unavailable dependencies
-- **123 tests** covering all 11 main scripts + utilities
+- Tests covering all main scripts + utilities + vector search
 
 ### Running Tests
 
@@ -239,8 +244,8 @@ python3 run_tests.py
 
 | Script | Test File |
 |--------|-----------|
-| 01_cb_set_get.py | test_01_cb_set_get.py |
-| 01a_cb_get_update_w_cas.py | test_01a_cb_get_update_w_cas.py |
+| 01a_cb_set_get.py | test_01_cb_set_get.py |
+| 01b_cb_get_update_w_cas.py | test_01a_cb_get_update_w_cas.py |
 | 02_cb_upsert_delete.py | test_02_cb_upsert_delete.py |
 | 03a_cb_query.py | test_03a_cb_query.py |
 | 03b_cb_query_profile.py | test_03b_cb_query_profile.py |
@@ -254,6 +259,8 @@ python3 run_tests.py
 | 10_cb_debug_tracing.py | test_10_cb_debug_tracing.py |
 | 11_cb_async_operations.py | test_11_cb_async_operations.py |
 | 12_cb_async_queries.py | test_12_cb_async_queries.py |
+| 13_cb_increment.py | test_13_cb_increment.py |
+| ai_vector_sample/ | test_ai_vector_search.py |
 | advanced_prepared_statement_wrapper.py | test_advanced_prepared_statement_wrapper.py |
 | excel_to_json_to_cb.py | test_excel_to_json_to_cb.py |
 
@@ -290,12 +297,18 @@ python3 run_tests.py
 - **Prepared Statements**: Query plan caching
 - **Subdocuments**: Efficient partial updates
 - **Batch Operations**: Multi-get, multi-upsert
+- **Counters**: Atomic increment/decrement operations
 
 ### 🐛 Debugging
 - **Logging**: Python logging to file
 - **Slow Operations**: Threshold-based auto-detection
 - **OpenTelemetry**: Distributed tracing
 - **Exception Handling**: Comprehensive error recovery
+
+### 🧠 AI & Vector Search
+- **Vector Indexes**: Standard and covering vector indexes
+- **KNN Search**: Similarity search with vector embeddings
+- **RAG Patterns**: Retrieval-Augmented Generation workflows
 
 ---
 
@@ -353,7 +366,7 @@ When adding new sample scripts:
 4. **Add exception handling**: Use try/except with specific exceptions
 5. **Close connections**: Always call `cluster.close()`
 6. **Create unit test**: Add `tests/test_12_cb_new_feature.py`
-7. **Update documentation**: Add to README.md and 00_cb_kv_ops_list.md
+7. **Update documentation**: Add to README.md and 00_cb_ops_list.md
 
 ---
 
@@ -393,6 +406,12 @@ grep -r "NetworkException" *.py  # Should use ServiceUnavailableException
 - Better transaction support
 - Full-text search improvements
 - Replica read enhancements
+
+**Recent Additions:**
+- Orphaned request reporting (debug tracing)
+- Class-based async client design
+- Atomic counter operations (increment/decrement)
+- Vector search and AI integration (Couchbase 8.x+)
 
 **Upgrading SDK:**
 ```bash
@@ -464,12 +483,11 @@ from couchbase.exceptions import ServiceUnavailableException
 
 ## Testing Notes
 
-- **149 total tests** across 16 test files
 - Tests use mocking to avoid requiring live Couchbase cluster
 - `run_tests.py` handles dependency mocking automatically
 - All tests pass when run with `python3 run_tests.py`
 - Tests validate logic, not actual Couchbase operations
-- New tests added for 11_cb_async_operations.py and 12_cb_async_queries.py
+- Tests include coverage for async operations, transactions, vector search, and counter operations
 
 ---
 
@@ -584,7 +602,7 @@ await cluster.close()
 
 ---
 
-**Last Updated**: 2025-11-13  
+**Last Updated**: 2025-01-20  
 **SDK Version**: 4.4.0  
 **Python Version**: 3.8+  
 **Maintained By**: Fujio Turner
