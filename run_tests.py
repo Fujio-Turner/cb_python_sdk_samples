@@ -43,6 +43,12 @@ def setup_exception_mocks():
         
         class CASMismatchException(CouchbaseException):
             pass
+
+        class DocumentUnretrievableException(CouchbaseException):
+            pass
+
+        class QueryErrorContext:
+            pass
         
         # Add exception classes to the mock module
         exceptions_module.CouchbaseException = CouchbaseException
@@ -52,6 +58,9 @@ def setup_exception_mocks():
         exceptions_module.ServiceUnavailableException = ServiceUnavailableException
         exceptions_module.ParsingFailedException = ParsingFailedException
         exceptions_module.CASMismatchException = CASMismatchException
+        exceptions_module.CasMismatchException = CASMismatchException
+        exceptions_module.DocumentUnretrievableException = DocumentUnretrievableException
+        exceptions_module.QueryErrorContext = QueryErrorContext
         
         sys.modules['couchbase.exceptions'] = exceptions_module
 
@@ -83,15 +92,22 @@ def mock_missing_dependencies():
         'couchbase.n1ql',
         'couchbase.management',
         'couchbase.management.search',
+        'couchbase.observability',
+        'couchbase.observability.otel_tracing',
+        'couchbase.observability.otel_metrics',
+        'couchbase.collection',
+        'couchbase.vector_search',
         'acouchbase',
         'acouchbase.cluster',
         'pandas',
         'openpyxl',
+        'tqdm',
         'opentelemetry',
         'opentelemetry.trace',
         'opentelemetry.sdk',
         'opentelemetry.sdk.trace',
-        'opentelemetry.sdk.trace.export'
+        'opentelemetry.sdk.trace.export',
+        'opentelemetry.sdk.resources',
     ]
     
     for module_name in mock_modules:
@@ -124,6 +140,7 @@ def get_working_tests():
         'tests.test_06_cb_get_retry_replica_read',
         'tests.test_09_cb_fts_search',
         'tests.test_10_cb_debug_tracing',
+        'tests.test_sample_syntax',
     ]
     
     # Only add tests that can be imported safely
@@ -136,7 +153,7 @@ def get_working_tests():
             if "invalid format" in str(e):
                 print(f"⚠️  Skipping {test_module}: {e}")
             else:
-                print(f"⚠️  Skipping {test_module}: Import error")
+                print(f"⚠️  Skipping {test_module}: Import error: {e}")
             # Skip tests with invalid format errors
     
     return working_tests

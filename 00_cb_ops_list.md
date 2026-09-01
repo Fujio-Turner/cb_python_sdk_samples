@@ -95,10 +95,11 @@ Demonstrates reading from replica nodes for high availability:
 - **get_with_retry()** - Retry logic with replica fallback
 - **get_any_replica()** - Read from fastest available replica (load balancing)
 - **get_all_replicas()** - Read from all replicas (consistency checking)
+- **get_replica_from_preferred_server_group()** - Zone-aware replica reads (SDK 4.4+ / 4.6)
 - Simulate timeout scenarios to trigger replica reads
-- Understand replica lag and data consistency
+- Understand replica lag and data consistency (`DocumentUnretrievableException` if no replica answers)
 
-**Key Concepts**: Replicas, high availability, failover, load balancing, data consistency
+**Key Concepts**: Replicas, high availability, failover, load balancing, zone-aware reads, data consistency
 
 ---
 
@@ -150,7 +151,9 @@ Comprehensive full-text search demonstrating **both approaches**:
 - `MatchQuery` - Match term in field
 - `MatchPhraseQuery` - Exact phrase matching
 - `ConjunctionQuery` - AND logic (multiple conditions)
-- Uses `cluster.search()` for bucket-level indexes
+- Uses `cluster.search()` for global/bucket-level indexes
+- Uses `scope.search()` for scoped indexes (SDK 4.6.1+ passes scope/bucket names; gated by `USE_SCOPED_SEARCH_EXAMPLE`)
+- `ConjunctionQuery([q1, q2])` list form (SDK 4.5+)
 - Returns document IDs (faster, ~40x)
 - Composable, type-safe query objects
 
@@ -171,13 +174,12 @@ Demonstrates comprehensive debugging and tracing:
   - Configure thresholds for KV, Query, Search, Analytics operations
   - JSON output with detailed timing breakdowns
   - Identify performance bottlenecks
-- **OpenTelemetry Tracing**: Distributed tracing
-  - Custom spans for operations
-  - Trace operation flow and performance
-  - Export to console (extendable to Jaeger, Zipkin)
+- **OpenTelemetry Tracing** (SDK 4.6 native): pass `tracer=get_otel_tracer(provider)` on `ClusterOptions` so KV/query spans export, not only app spans
+- **LoggingMeter**: `ClusterMetricsOptions(emit_interval=...)` for p50/p90/p99
+- **Parent spans**: `GetOptions(parent_span=...)` to nest SDK ops under a demo span
 - Error tracking and debugging patterns
 
-**Key Concepts**: Logging, slow ops detection, OpenTelemetry, performance profiling, observability
+**Key Concepts**: Logging, slow ops detection, native OTel, LoggingMeter, performance profiling, observability
 
 ---
 
@@ -362,7 +364,7 @@ ENDPOINT = "localhost"
 USERNAME = "Administrator"
 PASSWORD = "password"
 
-cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
 ```
 
 **Capella (Cloud):**
@@ -372,7 +374,7 @@ USERNAME = "your-capella-username"
 PASSWORD = "your-capella-password"
 
 options.apply_profile('wan_development')
-cluster = Cluster(f'couchbases://{ENDPOINT}', options)  # Note: couchbaseS (secure)
+cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)  # Note: couchbaseS (secure)
 ```
 
 ---

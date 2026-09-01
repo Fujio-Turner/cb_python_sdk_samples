@@ -30,7 +30,8 @@ from couchbase.exceptions import (
     TimeoutException,
     AuthenticationException,
     DocumentNotFoundException,
-    BucketNotFoundException
+    BucketNotFoundException,
+    DocumentUnretrievableException,
 )
 
 # Update this to your cluster
@@ -57,11 +58,11 @@ try:
     options = ClusterOptions(auth)
     
     # For local/self-hosted Couchbase Server:
-    cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+    cluster = Cluster.connect('couchbase://{}'.format(ENDPOINT), options)
     
     # For Capella (cloud), use this instead (uncomment and comment out the line above):
     # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-    # cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
+    # cluster = Cluster.connect('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
     # Wait until the cluster is ready for use.
     cluster.wait_until_ready(timedelta(seconds=10))
@@ -184,6 +185,34 @@ def get_all_replicas_example(key):
         print(f"✗ Error: {e}")
 
 
+# Example 5: Zone-aware replica read (SDK 4.4+ / Server 7.6+)
+def get_preferred_server_group_example(key):
+    """
+    Read from a replica in the SDK's preferred server group (zone-aware).
+    Configure the group via ClusterOptions(preferred_server_group=...) or the
+    connection string. Raises DocumentUnretrievableException if no replica in
+    that group can answer.
+    """
+    print(f"\n--- Example 5: Get '{key}' from Preferred Server Group ---")
+    start_time = time.time()
+    try:
+        result = cb_coll.get_replica_from_preferred_server_group(key)
+        print(f"✓ Retrieved from preferred server group")
+        print(f"  Content: {result.content_as[dict]}")
+        print(f"  CAS: {result.cas}")
+        print(f"  is_replica: {result.is_replica}")
+        print(f"  Time: {time.time() - start_time:.3f}s")
+        return result
+    except DocumentUnretrievableException:
+        print("✗ No replica in the preferred server group could serve this key")
+        print("  Configure replicas and ClusterOptions(preferred_server_group=...)")
+    except DocumentNotFoundException:
+        print(f"✗ Document '{key}' not found")
+    except CouchbaseException as e:
+        print(f"✗ Error: {e}")
+    return None
+
+
 # Example 4: Simulate timeout scenario with very aggressive timeout
 def simulate_timeout_scenario(key):
     """
@@ -230,6 +259,9 @@ get_all_replicas_example(key)
 
 # Example 4: Simulate timeout scenario
 simulate_timeout_scenario(key)
+
+# Example 5: Zone-aware replica read (no-op unless preferred_server_group is set)
+get_preferred_server_group_example(key)
 
 print("\n" + "=" * 70)
 print("REPLICA READ EXAMPLES COMPLETE")

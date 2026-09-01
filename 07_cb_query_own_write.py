@@ -41,11 +41,11 @@ auth = PasswordAuthenticator(USERNAME, PASSWORD)
 options = ClusterOptions(auth)
 
 # For local/self-hosted Couchbase Server:
-cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+cluster = Cluster.connect('couchbase://{}'.format(ENDPOINT), options)
 
 # For Capella (cloud), use this instead (uncomment and comment out the line above):
 # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-# cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
+# cluster = Cluster.connect('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
 # Wait until the cluster is ready for use.
 cluster.wait_until_ready(timedelta(seconds=10))

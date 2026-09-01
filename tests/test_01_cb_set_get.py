@@ -15,7 +15,7 @@ class TestCbSetGet(unittest.TestCase):
         self.mock_collection = MagicMock()
         self.mock_result = MagicMock()
         self.mock_result.cas = "1234567890"
-        self.mock_result.content_as = {"str": {"type": "airline", "name": "Test Airline"}}
+        self.mock_result.content_as = {dict: {"type": "airline", "name": "Test Airline"}}
 
     def test_upsert_document(self):
         """Test upsert document function with mocked dependencies."""
@@ -52,7 +52,7 @@ class TestCbSetGet(unittest.TestCase):
                 start_time = time.time()
                 try:
                     result = self.mock_collection.get(key)
-                    print(result.content_as["str"])
+                    print(result.content_as[dict])
                     print("CAS:", result.cas)
                 except Exception as e:
                     print(e)
@@ -100,7 +100,7 @@ class TestCbSetGet(unittest.TestCase):
                 start_time = time.time()
                 try:
                     result = self.mock_collection.get(key)
-                    print(result.content_as["str"])
+                    print(result.content_as[dict])
                     print("CAS:", result.cas)
                 except Exception as e:
                     print(e)

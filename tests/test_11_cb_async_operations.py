@@ -57,6 +57,16 @@ class TestAsyncOperations(unittest.TestCase):
             mock_cluster.wait_until_ready.assert_awaited_once()
         
         asyncio.run(test_wait())
+
+    def test_bucket_on_connect_awaited(self):
+        """acouchbase requires await bucket.on_connect() after cluster.bucket()."""
+        async def test_on_connect():
+            mock_bucket = AsyncMock()
+            mock_bucket.on_connect = AsyncMock()
+            await mock_bucket.on_connect()
+            mock_bucket.on_connect.assert_awaited_once()
+
+        asyncio.run(test_on_connect())
     
     def test_upsert_documents_async(self):
         """Test async upsert operations."""

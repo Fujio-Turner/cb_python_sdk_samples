@@ -15,6 +15,10 @@ class DocumentNotFoundException(Exception):
     pass
 
 
+class DocumentUnretrievableException(Exception):
+    pass
+
+
 class CouchbaseException(Exception):
     pass
 
@@ -249,6 +253,31 @@ class TestSimulateTimeoutScenario(unittest.TestCase):
         result = mock_coll.get("test_key", timeout=timedelta(milliseconds=1))
         
         self.assertEqual(result, self.mock_result)
+
+
+class TestPreferredServerGroupReplica(unittest.TestCase):
+    """Zone-aware replica reads (SDK 4.4+ / 4.6)."""
+
+    def setUp(self):
+        self.mock_result = Mock()
+        self.mock_result.content_as = {dict: {"name": "Zone Airline"}}
+        self.mock_result.cas = 42
+        self.mock_result.is_replica = True
+
+    def test_preferred_server_group_success(self):
+        mock_coll = Mock()
+        mock_coll.get_replica_from_preferred_server_group.return_value = self.mock_result
+        result = mock_coll.get_replica_from_preferred_server_group("airline_10")
+        self.assertTrue(result.is_replica)
+        mock_coll.get_replica_from_preferred_server_group.assert_called_once_with("airline_10")
+
+    def test_preferred_server_group_unretrievable(self):
+        mock_coll = Mock()
+        mock_coll.get_replica_from_preferred_server_group.side_effect = DocumentUnretrievableException(
+            "no replica in group"
+        )
+        with self.assertRaises(DocumentUnretrievableException):
+            mock_coll.get_replica_from_preferred_server_group("airline_10")
 
 
 if __name__ == '__main__':

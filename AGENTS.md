@@ -2,7 +2,7 @@
 
 ## Repository Purpose
 
-This repository contains **sample code demonstrating the Couchbase Python SDK** (version 4.4.0). It serves as a learning resource and reference implementation for developers integrating Couchbase NoSQL database with Python applications.
+This repository contains **sample code demonstrating the Couchbase Python SDK** (version 4.6.3). It serves as a learning resource and reference implementation for developers integrating Couchbase NoSQL database with Python applications.
 
 **Target Audience**: Developers learning Couchbase, those migrating to Couchbase, or building production applications with Couchbase.
 
@@ -106,7 +106,7 @@ ENDPOINT = "localhost"
 USERNAME = "Administrator"
 PASSWORD = "password"
 
-cluster = Cluster(f'couchbase://{ENDPOINT}', options)  # Non-TLS
+cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)  # Non-TLS
 ```
 
 #### Couchbase Capella (Cloud):
@@ -116,7 +116,7 @@ USERNAME = "your-username"
 PASSWORD = "your-password"
 
 options.apply_profile('wan_development')  # WAN optimization
-cluster = Cluster(f'couchbases://{ENDPOINT}', options)  # TLS required
+cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)  # TLS required
 ```
 
 **Key Differences:**
@@ -145,7 +145,7 @@ CB_COLLECTION = "airline"
 # Connect
 auth = PasswordAuthenticator(USERNAME, PASSWORD)
 options = ClusterOptions(auth)
-cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
 cluster.wait_until_ready(timedelta(seconds=10))
 
 # Get collection reference
@@ -385,14 +385,15 @@ grep -r "NetworkException" *.py  # Should use ServiceUnavailableException
 
 ## SDK Version Compatibility
 
-**Current Version**: Couchbase Python SDK 4.4.0
+**Current Version**: Couchbase Python SDK 4.6.3
 
-**Key Features in 4.4.0:**
-- Improved async support with `acouchbase`
-- Enhanced slow operations logging with `ClusterTracingOptions`
-- Better transaction support
-- Full-text search improvements
-- Replica read enhancements
+**Key Features in 4.6.3:**
+- Native OpenTelemetry tracing (`get_otel_tracer`) and `LoggingMeter` (`ClusterMetricsOptions`)
+- `Cluster.connect()` is the documented connect path; a closed cluster cannot be reused
+- Python 3.10–3.14 (3.9 wheels dropped)
+- Zone-aware replica reads (`get_replica_from_preferred_server_group`)
+- Vector search pre-filters and GSI/hyperscale vector query (4.5+)
+- `CASMismatchException` as the documented CAS exception name
 
 **Upgrading SDK:**
 ```bash
@@ -418,9 +419,9 @@ pip install --upgrade couchbase
 **Connection hangs:**
 ```python
 # Change from:
-cluster = Cluster('couchbases://localhost', options)
+cluster = Cluster.connect('couchbases://localhost', options)
 # To:
-cluster = Cluster('couchbase://localhost', options)
+cluster = Cluster.connect('couchbase://localhost', options)
 ```
 
 **Wrong content access:**
@@ -446,19 +447,21 @@ from couchbase.exceptions import ServiceUnavailableException
 3. **Prepared statements**: Query on `Cluster` or `Scope` (not `Collection`)
 4. **Timeouts**: Always use `timedelta`, never raw integers or microseconds
 5. **Parameters**: Use `named_parameters=` or `positional_parameters=` (not `parameters=`)
+6. **Connect**: `Cluster.connect(connstr, options)` — after `cluster.close()` create a new instance (4.6 will not reconnect)
 
 ---
 
 ## Dependencies
 
 **Required:**
-- `couchbase==4.4.0` - Core SDK
+- `couchbase==4.6.3` - Core SDK
 
 **Optional (for specific examples):**
 - `pandas>=1.5.0` - CSV/Excel import (05, excel_to_json_to_cb)
 - `openpyxl>=3.0.0` - Excel support
-- `opentelemetry-api>=1.15.0` - Tracing (10)
-- `opentelemetry-sdk>=1.15.0` - Tracing SDK (10)
+- `opentelemetry-api~=1.22` - Tracing (10); or `pip install 'couchbase[otel]==4.6.3'`
+- `opentelemetry-sdk~=1.22` - Tracing SDK (10)
+- `QueryIndexManagement.create_index()` uses `keys=`, not `fields=` (SDK 4.6.0+)
 
 ---
 
@@ -499,7 +502,7 @@ python3 run_tests.py
 
 ## Reference Documentation
 
-- [Couchbase Python SDK 4.4.0 Docs](https://docs.couchbase.com/python-sdk/current/hello-world/start-using-sdk.html)
+- [Couchbase Python SDK 4.6.3 Docs](https://docs.couchbase.com/python-sdk/current/hello-world/start-using-sdk.html)
 - [N1QL Query API](https://docs.couchbase.com/sdk-api/couchbase-python-client/couchbase_api/couchbase_n1ql.html)
 - [Exception Handling](https://docs.couchbase.com/sdk-api/couchbase-python-client/couchbase_api/exceptions.html)
 - [Async Operations](https://docs.couchbase.com/sdk-api/couchbase-python-client/acouchbase_api/acouchbase_core.html)
@@ -576,7 +579,7 @@ await cluster.close()
 ## Environment
 
 - **Python**: 3.8+
-- **Couchbase SDK**: 4.4.0
+- **Couchbase SDK**: 4.6.3
 - **Test Framework**: unittest (not pytest by default)
 - **Async**: asyncio + acouchbase
 - **Data Processing**: pandas (optional)
@@ -585,6 +588,6 @@ await cluster.close()
 ---
 
 **Last Updated**: 2025-11-13  
-**SDK Version**: 4.4.0  
+**SDK Version**: 4.6.3  
 **Python Version**: 3.8+  
 **Maintained By**: Fujio Turner

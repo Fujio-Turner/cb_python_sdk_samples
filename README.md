@@ -1,6 +1,6 @@
 # Couchbase Python SDK
 
-A comprehensive collection **production-ready code samples demonstrating the [Couch Python SDK 4..0](https://.couchbase.com/python/current/hello-world/start-using.html). Learn everything from CRUD operations to advanced features transactions, full-text search and async programming.
+A comprehensive collection of production-ready code samples demonstrating the [Couchbase Python SDK 4.6](https://docs.couchbase.com/python-sdk/current/hello-world/overview.html). Learn everything from CRUD operations to transactions, full-text search, native OpenTelemetry, and async programming.
 ## 🚀 Quick Start
 
 ```bash
@@ -22,8 +22,8 @@ python3 01a_cb_set_get.py
 ## 📋 Prerequisites
 
 - **Couchbase Server** (local) or **Capella** (cloud) - [Download here](https://www.couchbase.com/downloads)
-- **Python 3.8+**
-- **Couchbase Python SDK 4.4.0** (auto-installed via requirements.txt)
+- **Python 3.10+** (3.10–3.14; SDK 4.6 dropped 3.9 wheels)
+- **Couchbase Python SDK 4.6.3** (auto-installed via requirements.txt)
 - **travel-sample bucket** (load via Couchbase Web Console)
 
 ## 📚 What's Included
@@ -75,18 +75,18 @@ All scripts support **local** and **Capella** (cloud) configurations:
 ```python
 # Local/Self-hosted
 ENDPOINT = "localhost"
-cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
 
 # Capella (cloud)  
 ENDPOINT = "cb.xxxxx.cloud.couchbase.com"
 options.apply_profile('wan_development')
-cluster = Cluster(f'couchbases://{ENDPOINT}', options)  # Note: couchbaseS
+cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)  # Note: couchbaseS
 ```
 
 ## 🧪 Testing
 
 ```bash
-# Run all 123 unit tests
+# Run the mock unit suite (no live cluster required)
 python3 run_tests.py
 
 # Run specific test
@@ -147,5 +147,5 @@ MIT License - see [LICENSE](LICENSE)
 
 ---
 
-**SDK Version**: 4.4.0 | **Python**: 3.8+ | **Author**: Fujio Turner
+**SDK Version**: 4.6.3 | **Python**: 3.10+ | **Author**: Fujio Turner
 

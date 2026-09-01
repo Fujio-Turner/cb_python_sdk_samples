@@ -20,8 +20,8 @@ The test suite covers 14 Python sample files, providing comprehensive testing of
 
 | Test File | Source File | Description |
 |-----------|-------------|-------------|
-| `test_01_cb_set_get.py` | `01_cb_set_get.py` | Tests basic set/get operations with timing |
-| `test_01a_cb_get_update_w_cas.py` | `01a_cb_get_update_w_cas.py` | Tests CAS-based updates and get operations |
+| `test_01_cb_set_get.py` | `01a_cb_set_get.py` | Tests basic set/get operations with timing |
+| `test_01a_cb_get_update_w_cas.py` | `01b_cb_get_update_w_cas.py` | Tests CAS-based updates and get operations |
 | `test_02_cb_upsert_delete.py` | `02_cb_upsert_delete.py` | Tests upsert and delete operations |
 | `test_03a_cb_query.py` | `03a_cb_query.py` | Tests N1QL query execution and parameters |
 | `test_03b_cb_query_profile.py` | `03b_cb_query_profile.py` | Tests N1QL query profiling |
@@ -36,6 +36,7 @@ The test suite covers 14 Python sample files, providing comprehensive testing of
 | `test_10_cb_debug_tracing.py` | `10_cb_debug_tracing.py` | Tests logging and OpenTelemetry tracing |
 | `test_advanced_prepared_statement_wrapper.py` | `advanced_prepared_statement_wrapper.py` | Tests prepared statement wrapper functionality |
 | `test_excel_to_json_to_cb.py` | `excel_to_json_to_cb.py` | Tests CSV/Excel file processing and bulk import |
+| `test_sample_syntax.py` | all sample `.py` files | Compile-checks samples so syntax errors fail the suite |
 
 ## Running the Tests
 
@@ -54,7 +55,15 @@ The test dependencies include:
 
 ### Running All Tests
 
-To run all tests in the test suite:
+Supported runner (mocks Couchbase if the SDK is missing; prefers this over raw pytest):
+
+```bash
+python3 run_tests.py
+```
+
+SDK 4.6 samples use `Cluster.connect()` / `await Cluster.connect()`. Tests mock that classmethod, not the constructor.
+
+To run all tests with unittest discover:
 
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py" -v
@@ -80,6 +89,10 @@ python3 -m unittest tests.test_01_cb_set_get.TestCbSetGet.test_upsert_document -
 ## Test Architecture
 
 ### Mocking Strategy
+
+**Coverage note:** Most unit tests mock Couchbase and reimplement sample logic. They do **not** import `01a_cb_set_get.py` (and siblings) because those scripts connect at import time. Treat them as API-shape docs, not as a guarantee that every sample file still runs.
+
+`tests/test_sample_syntax.py` compile-checks every sample `.py` so a syntax error in a script fails `python3 run_tests.py`. The vector test is the only one that `exec`s a sample file.
 
 The tests use comprehensive mocking to avoid requiring an actual Couchbase cluster:
 
@@ -179,7 +192,7 @@ python3 -m unittest discover -s tests -p "test_*.py" -v
 ### Test Execution Environment
 
 The tests are designed to work in any Python environment with:
-- Python 3.6+
+- Python 3.10+
 - unittest (built-in)
 - unittest.mock (built-in)
 - Required project dependencies (for proper mocking)

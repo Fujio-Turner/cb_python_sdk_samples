@@ -28,7 +28,7 @@ from couchbase.cluster import Cluster
 from couchbase.options import ClusterOptions
 from couchbase.auth import PasswordAuthenticator
 from couchbase.exceptions import CouchbaseException
-from couchbase.collection import OrderedCollection
+from couchbase.collection import Collection
 from tqdm import tqdm
 
 
@@ -42,8 +42,9 @@ def parse_args():
     parser.add_argument('--username', default='Administrator', help='Couchbase username')
     parser.add_argument('--password', default='password', help='Couchbase password')
     parser.add_argument('--batch-size', type=int, default=1000, help='Batch insert size')
-    parser.add_argument('--port', type=int, default=8091, help='Couchbase port')
-    parser.add_argument('--https', action='store_true', help='Use HTTPS connection')
+    parser.add_argument('--port', type=int, default=None,
+                        help='Optional KV bootstrap port (default 11210). Do not pass 8091 (HTTP UI).')
+    parser.add_argument('--https', action='store_true', help='Use TLS (couchbases://)')
     return parser.parse_args()
 
 
@@ -88,11 +89,17 @@ def excel_to_json(excel_path: str, sheet_name: Optional[str] = None) -> List[Dic
     return json_data
 
 
-def connect_couchbase(args) -> tuple[Cluster, OrderedCollection]:
+def connect_couchbase(args) -> tuple:
     """
     Connect to Couchbase cluster and return cluster + collection.
     """
-    connection_string = f"couchbase{'s' if args.https else ''}://{args.host}:{args.port}"
+    scheme = "couchbases" if args.https else "couchbase"
+    # KV bootstrap is 11210 by default. 8091 is the HTTP/UI port and is not
+    # a valid couchbase:// port.
+    if args.port:
+        connection_string = f"{scheme}://{args.host}:{args.port}"
+    else:
+        connection_string = f"{scheme}://{args.host}"
     
     auth = PasswordAuthenticator(args.username, args.password)
     options = ClusterOptions(auth)
@@ -100,21 +107,20 @@ def connect_couchbase(args) -> tuple[Cluster, OrderedCollection]:
     if args.https:
         options.apply_profile('wan_development')
     
-    cluster = Cluster(connection_string, options)
+    cluster = Cluster.connect(connection_string, options)
     cluster.wait_until_ready(timedelta(seconds=10))
     
     bucket = cluster.bucket(args.bucket)
-    bucket.wait_until_ready(timedelta(seconds=5))
     
     collection = bucket.scope(args.scope).collection(args.collection)
     
-    print(f"Connected to Couchbase: {args.host}:{args.port} / {args.bucket}.{args.scope}.{args.collection}")
+    print(f"Connected to Couchbase: {connection_string} / {args.bucket}.{args.scope}.{args.collection}")
     return cluster, collection
 
 
-def bulk_import_to_couchbase(collection: OrderedCollection, data: List[Dict], batch_size: int = 1000):
+def bulk_import_to_couchbase(collection: Collection, data: List[Dict], batch_size: int = 1000):
     """
-    Bulk insert JSON documents to Couchbase with progress tracking.
+    Bulk upsert JSON documents with collection.upsert_multi (SDK 4.x KV multi-op).
     """
     total_docs = len(data)
     print(f"Starting bulk import of {total_docs} documents (batch_size={batch_size})")
@@ -124,22 +130,25 @@ def bulk_import_to_couchbase(collection: OrderedCollection, data: List[Dict], ba
     
     for i in tqdm(range(0, total_docs, batch_size), desc="Importing"):
         batch = data[i:i + batch_size]
-        
+        docs = {doc["id"]: doc for doc in batch if doc.get("id") is not None}
+        if not docs:
+            continue
         try:
-            # Prepare batch mutations
-            mutations = []
-            for doc in batch:
-                mutations.append(
-                    collection.upsert(doc['id'], doc, preserve_expiry=True)
-                )
-            
-            # Execute batch
-            result = collection.mutate_in_batch(mutations)
-            successful += len(result)
-            
+            result = collection.upsert_multi(docs)
+            exceptions = getattr(result, "exceptions", None) or {}
+            results = getattr(result, "results", None)
+            batch_fail = len(exceptions)
+            if results is not None:
+                batch_ok = len(results)
+            else:
+                batch_ok = len(docs) - batch_fail
+            successful += batch_ok
+            failed += batch_fail
+            if batch_fail:
+                print(f"  Batch at {i}: {batch_ok} ok, {batch_fail} failed")
         except CouchbaseException as e:
             print(f"Batch failed at {i}: {e}")
-            failed += len(batch)
+            failed += len(docs)
             continue
     
     print(f"\nImport complete: {successful} successful, {failed} failed")

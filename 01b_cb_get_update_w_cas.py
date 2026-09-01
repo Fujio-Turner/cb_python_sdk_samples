@@ -10,8 +10,8 @@ import time
 # Needed for cluster connection and exceptions
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
-from couchbase.options import ClusterOptions
-from couchbase.exceptions import CasMismatchException, DocumentNotFoundException, CouchbaseException
+from couchbase.options import ClusterOptions, ReplaceOptions
+from couchbase.exceptions import CASMismatchException, DocumentNotFoundException, CouchbaseException
 
 # Update this to your cluster
 # For local/self-hosted Couchbase Server:
@@ -37,11 +37,11 @@ try:
     options = ClusterOptions(auth)
     
     # For local/self-hosted Couchbase Server:
-    cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+    cluster = Cluster.connect('couchbase://{}'.format(ENDPOINT), options)
     
     # For Capella (cloud), use this instead (uncomment and comment out the line above):
     # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-    # cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
+    # cluster = Cluster.connect('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
     # Wait until the cluster is ready for use
     print("\nSTEP 0: Connecting to Cluster")
@@ -104,10 +104,10 @@ def update_document(key, doc, cas):
     print("\n  - Update Document with CAS")
     start_time = time.time()
     try:
-        result = cb_coll.replace(key, doc, cas=cas)
+        result = cb_coll.replace(key, doc, ReplaceOptions(cas=cas))
         print(f"    Successfully updated document with new CAS: {result.cas}")
         return True, result.cas
-    except CasMismatchException as e:
+    except CASMismatchException as e:
         print(f"    CAS mismatch: Document was modified by another process")
         print(f"    Failure details: {e}")
         return False, None

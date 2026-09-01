@@ -24,8 +24,11 @@ from couchbase.exceptions import (
     TimeoutException, 
     ServiceUnavailableException,
     ParsingFailedException,
-    CouchbaseException
+    CouchbaseException,
+    QueryErrorContext,
+    DurabilitySyncWriteAmbiguousException,
 )
+from couchbase.durability import ServerDurability, Durability
 import json
 import time
 import hashlib
@@ -58,7 +61,11 @@ def get_file_md5(filename):
 # Connect to Couchbase
 cluster = None
 try:
-    cluster = Cluster(f"couchbase://{CB_HOST}", ClusterOptions(PasswordAuthenticator(CB_USER, CB_PASS)))
+    cluster = Cluster.connect(
+        f"couchbase://{CB_HOST}",
+        ClusterOptions(PasswordAuthenticator(CB_USER, CB_PASS)),
+    )
+    cluster.wait_until_ready(timedelta(seconds=10))
     bucket = cluster.bucket(CB_BUCKET)
     collection = bucket.scope(CB_SCOPE).collection(CB_COLLECTION)
     print("Successfully connected to Couchbase")
@@ -169,6 +176,11 @@ try:
 except CouchbaseException as e:
     print(f"Query error (expected): Bucket or keyspace not found")
     print(f"Details: {e}")
+    if isinstance(e.context, QueryErrorContext):
+        print(f"  statement: {e.context.statement}")
+        print(f"  first_error_code: {e.context.first_error_code}")
+        print(f"  first_error_message: {e.context.first_error_message}")
+        print(f"  client_context_id: {e.context.client_context_id}")
 except Exception as e:
     print(f"Unexpected error: {e}")
 
@@ -237,6 +249,42 @@ try:
             
 except Exception as e:
     print(f"Error in CAS example: {e}")
+
+# Example 6: Ambiguous durable write (retry until DocumentExistsException)
+# Requires bucket replica count >= 1. A one-node travel-sample (0 replicas)
+# cannot satisfy Durability.MAJORITY — the example is skipped in that case.
+print("\n--- Example 6: DurabilitySyncWriteAmbiguousException (retry insert) ---")
+print("Note: Durability.MAJORITY needs at least one replica. Skip on a single-node cluster.")
+try:
+    durable_key = "test_durable_insert"
+    try:
+        collection.remove(durable_key)
+    except DocumentNotFoundException:
+        pass
+    for attempt in range(3):
+        try:
+            collection.insert(
+                durable_key,
+                {"title": "durable demo", "attempt": attempt},
+                InsertOptions(durability=ServerDurability(level=Durability.MAJORITY)),
+            )
+            print(f"Durable insert succeeded on attempt {attempt + 1}")
+            break
+        except DocumentExistsException:
+            if attempt > 0:
+                print("Document exists after a previous ambiguous write — treat as success")
+                break
+            print("Document already existed before this demo")
+            break
+        except DurabilitySyncWriteAmbiguousException:
+            print(f"Durable write ambiguous on attempt {attempt + 1}; retrying")
+            continue
+    try:
+        collection.remove(durable_key)
+    except DocumentNotFoundException:
+        pass
+except Exception as e:
+    print(f"Durability example skipped or failed: {e}")
 
 print("\n--- Exception Handling Examples Complete ---")
 

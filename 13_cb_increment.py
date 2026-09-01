@@ -164,9 +164,9 @@ def main():
     
     # For Capella (cloud), uncomment:
     # options.apply_profile('wan_development')
-    # cluster = Cluster(f'couchbases://{ENDPOINT}', options)
+    # cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)
     
-    cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+    cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
     
     try:
         cluster.wait_until_ready(timedelta(seconds=10))

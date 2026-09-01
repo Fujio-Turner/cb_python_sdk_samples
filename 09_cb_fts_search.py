@@ -79,6 +79,9 @@ INDEX_NAME = "hotels-index"
 
 # Set to True to enable native SDK examples (uses cluster.search() with bucket-level index)
 USE_NATIVE_SDK_EXAMPLES = True  # Your bucket-level index should work
+# Set True only if INDEX_NAME is a *scope-level* FTS index. Bucket-level indexes
+# must use cluster.search(); scope.search() will fail on them (SDK 4.6.1+).
+USE_SCOPED_SEARCH_EXAMPLE = False
 
 # User Input ends here.
 
@@ -87,11 +90,11 @@ auth = PasswordAuthenticator(USERNAME, PASSWORD)
 options = ClusterOptions(auth)
 
 # For local/self-hosted Couchbase Server:
-cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
 
 # For Capella (cloud), use this instead:
 # options.apply_profile('wan_development')
-# cluster = Cluster(f'couchbases://{ENDPOINT}', options)
+# cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)
 
 cluster.wait_until_ready(timedelta(seconds=10))
 
@@ -258,7 +261,8 @@ else:
         query1 = MatchQuery("france", field="country")
         query2 = MatchQuery("paris", field="city")
         
-        conjunction = ConjunctionQuery(query1, query2)
+        # 4.5+: ConjunctionQuery also accepts a list of queries
+        conjunction = ConjunctionQuery([query1, query2])
         request = SearchRequest.create(conjunction)
         
         search_result = cluster.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "city", "country"]))
@@ -275,6 +279,25 @@ else:
         print(f"  Time: {elapsed:.4f}s | Method: SDK ConjunctionQuery + cluster.search()")
     except Exception as e:
         print(f"✗ Error: {e}")
+
+    # Example 7: Scoped search (SDK 4.6.1+ passes scope_name/bucket_name for scoped indexes)
+    print("\n--- Example 7 (SDK): scope.search() for a scoped index ---")
+    print("  Use cluster.search() for global/bucket-level indexes.")
+    print("  Use scope.search() for indexes created on a scope (required as of 4.6.1).")
+    if not USE_SCOPED_SEARCH_EXAMPLE:
+        print("  Skipped (USE_SCOPED_SEARCH_EXAMPLE = False).")
+        print("  Enable only when INDEX_NAME is a scope-level FTS index.")
+    else:
+        try:
+            start_time = time.time()
+            query = MatchQuery("paris", field="name")
+            request = SearchRequest.create(query)
+            search_result = scope.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "country"]))
+            rows = list(search_result.rows())
+            elapsed = time.time() - start_time
+            print(f"✓ scope.search() returned {len(rows)} rows in {elapsed:.4f}s")
+        except Exception as e:
+            print(f"✗ scope.search() error: {e}")
 
 
 # ============================================================================

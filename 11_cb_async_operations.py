@@ -186,6 +186,7 @@ class AsyncCouchbaseClient:
             await self.cluster.wait_until_ready(timedelta(seconds=10))
             
             self.bucket = self.cluster.bucket(self.bucket_name)
+            await self.bucket.on_connect()
             self.collection = self.bucket.scope(self.scope_name).collection(self.collection_name)
             
             if DEBUG:

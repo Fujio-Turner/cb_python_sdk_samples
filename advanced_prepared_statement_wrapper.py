@@ -196,11 +196,11 @@ if __name__ == "__main__":
     options = ClusterOptions(auth)
     
     # For local/self-hosted Couchbase Server:
-    cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+    cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
     
     # For Capella (cloud), use this instead (uncomment and comment out the line above):
     # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-    # cluster = Cluster(f'couchbases://{ENDPOINT}', options)  # Note: couchbaseS (secure)
+    # cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)  # Note: couchbaseS (secure)
     
     # Wait until the cluster is ready
     cluster.wait_until_ready(timedelta(seconds=10))

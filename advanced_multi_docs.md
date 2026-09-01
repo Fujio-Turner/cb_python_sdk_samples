@@ -8,6 +8,8 @@ This document demonstrates batch operations for improved performance when workin
 - **Simplified Code**: Handle multiple operations in one call
 - **Performance**: Especially beneficial for high-volume applications
 
+**SDK 4.6:** If you pass durability on a multi-op, every per-key option in that call must use the same durability type (all server durability, or all client durability — do not mix).
+
 ## Connection Setup
 
 ```python
@@ -23,11 +25,11 @@ PASSWORD = "password"
 # Connect to the cluster
 auth = PasswordAuthenticator(USERNAME, PASSWORD)
 options = ClusterOptions(auth)
-cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
 
 # For Capella (cloud), use this instead:
 # options.apply_profile('wan_development')
-# cluster = Cluster(f'couchbases://{ENDPOINT}', options)
+# cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)
 
 bucket = cluster.bucket('travel-sample')
 collection = bucket.default_collection()  # Or use scope/collection

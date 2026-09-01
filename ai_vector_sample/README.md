@@ -206,6 +206,8 @@ LIMIT 2;
 
 ---
 
+Python SDK 4.6 uses `SearchRequest.create(VectorSearch.from_vector_query(VectorQuery(field, vector, num_candidates=...)))` and `scope.search(index, request)`. Pre-filters are supported from SDK 4.4 / Server 7.6.4.
+
 ## Step 8 – Python SDK (FTS)
 
 *(Unchanged – see original. Projects via `fields`, similar efficiency.)*
