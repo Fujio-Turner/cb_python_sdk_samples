@@ -194,7 +194,16 @@ LIMIT 2;
 
 ## Step 6 – Create FTS Vector Index
 
-*(Unchanged – see original for `sample_vector_search_index.json` and cURL creation.)*
+On Couchbase Server **7.6.x**, GSI `CREATE VECTOR INDEX` is not available (Server 8.0+). Use the Search vector index:
+
+```bash
+python3 ai_vector_sample/create_vector_indexes.py
+```
+
+That PUTs `02_vector_search_index.json` to
+`http://localhost:8094/api/bucket/cake/scope/us/index/vect` (128-dim cosine on `embedding`, plus stored `name` / `capital`). It also tries GSI VECTOR INDEX and skips it on 7.6.
+
+SQL++ vector query on 7.6 uses `SEARCH(..., knn)` against `cake.us.vect`. On 8.0+ use `APPROX_VECTOR_DISTANCE` with a GSI vector index.
 
 *Note:* FTS "covers" via `fields` param (projects from index), but lacks explicit INCLUDE like GSI.
 

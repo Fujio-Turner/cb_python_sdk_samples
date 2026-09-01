@@ -31,6 +31,7 @@ SAMPLE_FILES = [
     "advanced_prepared_statement_wrapper.py",
     "excel_to_json_to_cb.py",
     "ai_vector_sample/04_vector_search_using_python_sdk.py",
+    "ai_vector_sample/create_vector_indexes.py",
     "run_tests.py",
 ]
 
