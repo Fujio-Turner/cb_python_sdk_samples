@@ -2,6 +2,8 @@
 
 This file is a **branch working log** for `v4.6`, not end-user documentation. Drop it from `main` after merge, or move it under contributor notes.
 
+**Status (2026-09-01):** Implementation is done. Samples pin `couchbase==4.6.3`, use `Cluster.connect()`, and the user-facing markdown (README, AGENTS, 00_cb_ops_list, tests/README, ai_vector_sample/README) matches that. §3 rows below are the original plan, not a remaining todo list — see **§9**.
+
 **Branch:** `v4.6` (from `main` @ `220204f`)  
 **Plan file:** `work/v3_to_4.md`  
 **Target package:** `couchbase==4.6.3` (latest 4.6 patch as of 2026-08-25)  
@@ -585,3 +587,24 @@ Success criteria:
 | Remaining plan items (05 durability, 09 scoped search, 08 close, GSI vector, docs) | done |
 | `python3 run_tests.py` | done — 165 tests, 0 failures |
 | Smoke-import venv `couchbase==4.6.3` (QueryErrorContext, get_otel_tracer, upsert_multi) | done |
+| Live cluster 7.6.5 (`localhost:8091`, travel-sample + cake.us.orders) | done |
+| Scoped FTS `hotels-index` + `scope.search()` | done (`fts/`, 09) |
+| Vector FTS `cake.us.vect` + SQL++ knn; GSI skipped on 7.6 | done |
+| Markdown pass aligned to 4.6 (connect, FTS, vector 7.6 vs 8.0, Python 3.10+, 165 tests) | done |
+
+---
+
+## 9. What landed vs this plan (read this, not the unchecked rows above)
+
+The per-file plan in §3 was written **before** implementation. A few items changed on purpose:
+
+| Plan said | What shipped |
+|---|---|
+| Collection `get_replica_from_preferred_server_group` in 06 | **Does not exist** on `Collection`. KV uses `get_any_replica(GetAnyReplicaOptions(read_preference=ReadPreference.SELECTED_SERVER_GROUP))` plus `ClusterOptions(preferred_server_group=...)`. The txn API stays on `AttemptContext`. |
+| 09 SQL++ “no scope-level index needed” | Both SQL++ and SDK use scoped **`hotels-index`**. SQL++ `SEARCH()` needs index **`travel-sample.inventory.hotels-index`**. |
+| Vector README “Server 8.x required” | **FTS vector works on 7.6**. GSI `CREATE VECTOR INDEX` / `APPROX_VECTOR_DISTANCE` need **8.0**. |
+| README / AGENTS still on Python 3.8+ and `Cluster()` | Samples and docs now **3.10+** and **`Cluster.connect()`**. |
+| `run_tests.py` includes 07/08/13 | Left **out** of the runner (MagicMock `assertRaises`). Suite is **165 / 0**. |
+| Docs pass last | README, AGENTS, 00_cb_ops_list, tests/README, ai_vector_sample/README, advanced_multi_docs, this file. |
+
+This file is a **branch working log**. Do not treat unchecked §3 rows as remaining work.

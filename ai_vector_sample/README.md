@@ -1,33 +1,36 @@
 # Couchbase Vector Search Demo
 
-**Note:** This demo requires **Couchbase Server 8.x** or higher (or Couchbase Capella) for Vector Search support.
+Hands-on vector search with the **Couchbase Python SDK 4.6.3** on bucket **`cake`**, scope **`us`**, collection **`orders`**.
 
-A hands-on example showing how to use **Vector Search** in Couchbase to find similar documents based on embeddings.
+**Server versions:**
+
+| Path | Couchbase Server | What to run |
+|------|------------------|-------------|
+| **FTS vector index** `cake.us.vect` | **7.6+** | `create_vector_indexes.py` + `04_vector_search_using_python_sdk.py` |
+| **GSI `CREATE VECTOR INDEX` / `APPROX_VECTOR_DISTANCE`** | **8.0+** | Same helper tries GSI and skips it on 7.6 |
+
+On Server **7.6.5**, GSI `CREATE VECTOR INDEX` is a syntax error (`VECTOR` is reserved) and `APPROX_VECTOR_DISTANCE` is not a function. Use the Search (FTS) vector index.
 
 ---
 
 ## What This Demo Does
 
-This demo uses **4 country documents** (Belgium, France, Germany, United States) that each have a pre-computed 128-dimension vector embedding. 
+Four country documents (Belgium, France, Germany, United States) each have a pre-computed **128-dimension** embedding. Belgium’s vector is the query. Search ranks nearest neighbors — the same idea as recommendations, semantic search, and RAG.
 
-We'll use **Belgium's embedding as the query input** to find which countries are most similar. Vector search calculates the "distance" between embeddings to find the closest neighbors – perfect for recommendation systems, semantic search, and RAG applications.
-
-**This demo covers two vector index types:**
-
-| Index Type | Description |
-|------------|-------------|
-| **GSI Hyperscale Vector Index** | Couchbase's new high-performance vector index using SQL++ queries |
-| **FTS Vector Index** | Full-Text Search index with KNN vector support |
+| Index Type | Description | Server |
+|------------|-------------|--------|
+| **FTS Vector Index** | Search index with KNN (`knn` + optional text pre-filter) | 7.6+ |
+| **GSI Hyperscale Vector Index** | SQL++ `APPROX_VECTOR_DISTANCE` (optional covering `INCLUDE`) | 8.0+ |
 
 ---
 
 ## What You'll Learn
 
-1. Load **4 country docs** with 128-dim embeddings
-2. Create **GSI vector indexes** (basic and covering)
-3. Create an **FTS vector index**
-4. Run **similarity queries** using Belgium's embedding to find closest matches
-5. Compare **GSI vs FTS** approaches
+1. Load **4 country docs** with 128-dim embeddings into `cake.us.orders`
+2. Create the **FTS vector index** `vect` (and try GSI on 8.0)
+3. Run **SDK** `VectorQuery` / `SearchRequest` + **pre-filter**
+4. Run **SQL++ `SEARCH(..., knn)`** against `cake.us.vect` (7.6)
+5. On 8.0, compare with **GSI** `APPROX_VECTOR_DISTANCE`
 
 ---
 
@@ -35,232 +38,210 @@ We'll use **Belgium's embedding as the query input** to find which countries are
 
 | Index Type | Best For | ANN Pruning | Score Filter | Covering Support |
 |------------|----------|-------------|--------------|------------------|
-| **GSI Vector Index** (w/ Covering) | Pure vector top-k | Yes (`ORDER BY … LIMIT`) | Post-filter (after top-k) | **Yes** (INCLUDE fields) |
-| **FTS Vector Index** | Hybrid text + vector, high recall | Yes (`knn`) | Pushed-down (`filter.min`) | Partial (via `fields` param) |  
+| **GSI Vector Index** (w/ Covering) | Pure vector top-k | Yes (`ORDER BY … LIMIT`) | Post-filter (after top-k) | **Yes** (`INCLUDE` fields) |
+| **FTS Vector Index** | Hybrid text + vector, high recall | Yes (`knn`) | Pushed-down (`filter.min` / prefilter) | Partial (via `fields` param) |
 
 ---
 
 ## File Layout
 
 ```
-.
+ai_vector_sample/
 ├── README.md
-├── 00_query_vector_input.json                  ← Query input: 128-dim Belgium vector (named parameter)
-├── 01_vector_docs.json                         ← Step 1: 4 country docs to import
-├── 02_vector_search_index.json                 ← Step 6: FTS vector index definition
-├── 03_vector_search_query_curl.txt             ← Step 7: FTS cURL example
-└── 04_vector_search_using_python_sdk.py        ← Step 8: Python SDK FTS example
+├── 00_query_vector_input.json           ← 128-dim Belgium query vector
+├── 01_vector_docs.json                  ← 4 country docs to import
+├── 02_vector_search_index.json          ← FTS vector index definition (128-dim cosine)
+├── 03_vector_search_query_curl.txt      ← FTS REST knn example (port 8094)
+├── 04_vector_search_using_python_sdk.py ← SDK 4.6 FTS + SQL++ SEARCH knn (+ GSI try)
+└── create_vector_indexes.py             ← PUT cake.us.vect; try GSI VECTOR INDEX
 ```
+
+---
+
+## Prerequisites
+
+- Python **3.10+**, `couchbase==4.6.3`
+- Couchbase with **Search Service** (port **8094**)
+- Bucket **`cake`**, scope **`us`**, collection **`orders`**
+- Default sample credentials: `Administrator` / `password` on `localhost`
 
 ---
 
 ## Step 1 – Import Sample Documents
 
-### `sample_vector_docs.json`
+Import **`01_vector_docs.json`** into **Buckets → `cake` → `us.orders`**.
 
-*(Unchanged – see original for the 4 country docs with embeddings.)*
-
-**Import** → **Buckets → `cake` → `us.orders` → **Import Documents**
+Four keys: `country::belgium`, `country::france`, `country::germany`, `country::united-states`. Each has `name`, `capital`, `region`, and `embedding` (128 floats).
 
 ---
 
-## Step 2a – Create a Basic (Non-Covering) Vector Index
-
-```sql
-CREATE VECTOR INDEX idx_country_embedding_v1
-ON `cake`.`us`.`orders`(embedding VECTOR)
-WITH { "dimension": 128, "similarity": "COSINE" };
-```
-
-This is the simplest vector index – it only indexes the `embedding` field.
-
----
-
-## Step 2b – Create a Covering Vector Index
-
-```sql
-CREATE VECTOR INDEX idx_country_embedding_cover_v1
-ON `cake`.`us`.`orders`(embedding VECTOR)
-  INCLUDE (`name`, `capital`)
-WITH { "dimension": 128, "similarity": "COSINE" };
-```
-
-This index stores `name` and `capital` **inside the index** using the `INCLUDE` clause.
-
----
-
-### Comparing Non-Covering vs Covering Indexes
-
-| Aspect | 2a: Non-Covering | 2b: Covering (INCLUDE) |
-|--------|------------------|------------------------|
-| **Index size** | Smaller | ~10-20% larger |
-| **Query for extra fields** | Fetches from KV store (slower) | Returns directly from index (faster) |
-| **Best for** | Simple similarity lookups | Returning field values with results |
-| **Latency** | Higher for projected fields | ~20-50% lower for covered fields |
-
-> 💡 **When to use which?**
-> - Use **2a (basic)** if you only need doc IDs and similarity scores
-> - Use **2b (covering)** if your queries return fields like `name`, `capital`, etc.
-
----
-
-### 🧠 Vector Search Concepts: What do `dimension` and `similarity` mean?
-
-When creating the index, you saw: `WITH { "dimension": 128, "similarity": "COSINE" }`
-
-Here is what this means in simple terms:
-
-- **dimension (e.g., 128)**: Think of this as the "fingerprint size" of the AI model you used.
-  - Every AI model (like OpenAI, HuggingFace) converts text into a list of numbers (a vector).
-  - The "dimension" is just **how many numbers** are in that list.
-  - **Rule**: This number MUST match your AI model exactly. (e.g., OpenAI `text-embedding-3-small` is 1536).
-
-- **similarity (e.g., "COSINE")**: This is the "ruler" used to decide if two things are related.
-  - **COSINE**: Measures the angle between vectors. Best for text semantic search (e.g., "dog" is close to "puppy").
-  - **L2 (Squared Euclidean)**: Measures the straight physical distance. Good for some specific math/image use cases.
-  - **DOT (Dot Product)**: Useful for recommendation systems or when vector magnitude matters.
-
-For more details, see the [official documentation](https://docs.couchbase.com/cloud/n1ql/n1ql-language-reference/createvectorindex.html).
-
----
-
-## Step 3 – The Query Vector (Named Parameter)
-
-### `sample_vector_query_topk.json` *(exact 128-dim Belgium embedding)*
-
-*(Unchanged – see original for the full 128-float array.)*
-
-**How to use it**  
-*(Unchanged – paste into Query Editor parameters.)*
-
----
-
-## Step 4 – Basic Top-K Query (`LIMIT 2`, Covered)
-
-### `sample_vector_query_topk_cover.txt`
-
-```sql
-SELECT 
-    meta().id AS doc_id,
-    `name`, `capital`,  -- Covered: Pulled directly from index
-    APPROX_VECTOR_DISTANCE(embedding, $query_vector, "COSINE") AS similarity
-FROM `cake`.`us`.`orders`
-ORDER BY similarity DESC
-LIMIT 2;
-```
-
-**Result** *(Covered query – faster!)*
-
-```json
-[
-  {"doc_id":"country::belgium","name":"Belgium","capital":"Brussels","similarity":1.0},
-  {"doc_id":"country::france","name":"France","capital":"Paris","similarity":0.951}
-]
-```
-
-*Pro Tip:* Run `EXPLAIN` on this query – you'll see **no data scans**, just index fetches. Latency drops for large datasets.
-
----
-
-## Step 5 – **Threshold + Top-K Query (`LIMIT 2`, Covered)**
-
-### `sample_vector_query_filtered_cover.txt`
-
-```sql
--- Efficient: top-k pruning + post-filter on similarity (still covered for projected fields)
-SELECT 
-    meta().id AS doc_id,
-    `name`, `capital`, `region`,  -- name/capital covered; region pulls from KV (partial cover)
-    APPROX_VECTOR_DISTANCE(embedding, $query_vector, "COSINE") AS similarity
-FROM `cake`.`us`.`orders`
-WHERE APPROX_VECTOR_DISTANCE(embedding, $query_vector, "COSINE") <= 0.08
-ORDER BY similarity DESC
-LIMIT 2;
-```
-
-**Result (your data)** *(Partial cover – add `region` to INCLUDE for full coverage)*
-
-```json
-[
-  {"doc_id":"country::germany","name":"Germany","capital":"Berlin","region":"Europe","similarity":0.0584},
-  {"doc_id":"country::belgium","name":"Belgium","capital":"Brussels","region":"Europe","similarity":0.0}
-]
-```
-
-*Why partial?* `region` isn't INCLUDEd – KV fetch for it. For full coverage, update index: `INCLUDE (`name`,`capital`,`region`)`.  
-*The index returns **only 2 docs** – even if you had millions. Covering shines here for QPS scaling.*
-
----
-
-## Step 6 – Create FTS Vector Index
-
-On Couchbase Server **7.6.x**, GSI `CREATE VECTOR INDEX` is not available (Server 8.0+). Use the Search vector index:
+## Step 2 – Create Indexes
 
 ```bash
 python3 ai_vector_sample/create_vector_indexes.py
 ```
 
-That PUTs `02_vector_search_index.json` to
-`http://localhost:8094/api/bucket/cake/scope/us/index/vect` (128-dim cosine on `embedding`, plus stored `name` / `capital`). It also tries GSI VECTOR INDEX and skips it on 7.6.
+That script:
 
-SQL++ vector query on 7.6 uses `SEARCH(..., knn)` against `cake.us.vect`. On 8.0+ use `APPROX_VECTOR_DISTANCE` with a GSI vector index.
+1. PUTs `02_vector_search_index.json` to
+   `http://localhost:8094/api/bucket/cake/scope/us/index/vect`
+   (128-dim **cosine** on `embedding`; stored `name` / `capital`; type mapping `us.orders`).
+   Strips `uuid` / `sourceUUID`. Uses an explicit `Authorization: Basic ...` header.
+2. Waits until the index reports documents (`/count` can 500 `no planPIndexes` for a couple of seconds while the plan builds).
+3. Attempts GSI:
 
-*Note:* FTS "covers" via `fields` param (projects from index), but lacks explicit INCLUDE like GSI.
+   ```sql
+   CREATE VECTOR INDEX idx_country_embedding_v1
+   ON `cake`.`us`.`orders`(embedding VECTOR)
+   WITH { "dimension": 128, "similarity": "COSINE" };
+   ```
+
+   On 7.6 this is skipped. On 8.0+ you can also add a covering index:
+
+   ```sql
+   CREATE VECTOR INDEX idx_country_embedding_cover_v1
+   ON `cake`.`us`.`orders`(embedding VECTOR)
+     INCLUDE (`name`, `capital`)
+   WITH { "dimension": 128, "similarity": "COSINE" };
+   ```
+
+### Non-covering vs covering (GSI, Server 8.0+)
+
+| Aspect | Non-covering | Covering (`INCLUDE`) |
+|--------|----------------|----------------------|
+| **Index size** | Smaller | Larger |
+| **Projected fields** | Fetch from KV | Return from index |
+| **Best for** | IDs + scores | Returning `name`, `capital`, … |
+
+`dimension` must match the embedding model (this demo is **128**). `similarity`: **COSINE** for text semantics; L2 / DOT for other cases.
 
 ---
 
-## Step 7 – FTS Vector Search (cURL)
+## Step 3 – Query Vector
 
-*(Unchanged – see original. Uses `fields` for projection, akin to covering.)*
+`00_query_vector_input.json` is Belgium’s 128-dim embedding (same array inlined in `04_vector_search_using_python_sdk.py`).
+
+In the Query Workbench, bind it as named parameter `$query_vector` / `$vec` if you run SQL++ by hand.
 
 ---
 
-Python SDK 4.6 uses `SearchRequest.create(VectorSearch.from_vector_query(VectorQuery(field, vector, num_candidates=...)))` and `scope.search(index, request)`. Pre-filters are supported from SDK 4.4 / Server 7.6.4.
+## Step 4 – FTS vector search (Server 7.6+) — Python SDK 4.6
 
-## Step 8 – Python SDK (FTS)
+```bash
+python3 ai_vector_sample/04_vector_search_using_python_sdk.py
+```
 
-*(Unchanged – see original. Projects via `fields`, similar efficiency.)*
+Connect is `Cluster.connect(...)`. Search uses the scoped index name `vect`:
+
+```python
+from couchbase.search import SearchRequest, MatchQuery
+from couchbase.vector_search import VectorQuery, VectorSearch
+
+vector_search = VectorSearch.from_vector_query(
+    VectorQuery("embedding", query_vector, num_candidates=5)
+)
+request = SearchRequest.create(vector_search)
+result = scope.search(
+    "vect",
+    request,
+    SearchOptions(limit=5, fields=["name", "capital"]),
+)
+```
+
+Pre-filter (SDK 4.4+ / Server 7.6.4+): run a non-vector query first, then KNN:
+
+```python
+prefilter = MatchQuery("Belgium", field="name")
+vector_query = VectorQuery.create(
+    "embedding", query_vector, num_candidates=5, prefilter=prefilter
+)
+request = SearchRequest.create(VectorSearch.from_vector_query(vector_query))
+result = scope.search("vect", request, SearchOptions(limit=5, fields=["name", "capital"]))
+```
+
+**Live ranking** (Belgium query, FTS cosine, 7.6.5): Belgium **1.0**, Germany **~0.941**, United States **~0.907**, France **~0.906**. Pre-filter on `name=Belgium` returns only Belgium.
+
+SQL++ on 7.6 uses `SEARCH(..., knn)` against the **fully-qualified** index `cake.us.vect`:
+
+```sql
+SELECT META(t).id AS id, t.name, t.capital
+FROM `cake`.`us`.`orders` AS t
+WHERE SEARCH(t, $search, {"index": "cake.us.vect"})
+```
+
+`$search` is a JSON object with `knn: [{ "k": 4, "field": "embedding", "vector": [...] }]` and `fields`. On 7.6, `SEARCH_SCORE()` / `SEARCH_META()` may be null for knn; rank comes from the SDK FTS API.
+
+`scope.search()` may emit a CouchbaseDeprecationWarning that option `scope_name` is deprecated (SDK internals). The call still succeeds.
+
+---
+
+## Step 5 – FTS Vector Search (cURL)
+
+See `03_vector_search_query_curl.txt`. Endpoint:
+
+`http://localhost:8094/api/bucket/cake/scope/us/index/vect/query`
+
+Use real Basic auth (the sample header in that file is a placeholder). Body: `knn` on `embedding` plus `fields` for projection.
+
+---
+
+## Step 6 – GSI top-k (Server 8.0+ only)
+
+```sql
+SELECT
+    META().id AS doc_id,
+    `name`, `capital`,
+    APPROX_VECTOR_DISTANCE(embedding, $query_vector, "COSINE") AS similarity
+FROM `cake`.`us`.`orders`
+ORDER BY similarity
+LIMIT 2;
+```
+
+Covering index (`INCLUDE`) avoids KV fetches for `name` / `capital`. Threshold + top-k:
+
+```sql
+SELECT META().id AS doc_id, `name`, `capital`,
+       APPROX_VECTOR_DISTANCE(embedding, $query_vector, "COSINE") AS similarity
+FROM `cake`.`us`.`orders`
+WHERE APPROX_VECTOR_DISTANCE(embedding, $query_vector, "COSINE") <= 0.08
+ORDER BY similarity
+LIMIT 2;
+```
+
+The Python script calls this via `cluster.query(...)` and prints `GSI vector query skipped (needs Server 8.0+ ...)` on 7.6.
 
 ---
 
 ## Which Index Should You Choose?
 
-| Criteria | **GSI Vector Index (Covering)** | **FTS Vector Index** |
-|----------|---------------------------------|----------------------|
-| **Pure top-k** | **Best** (`ORDER BY … LIMIT 2`, fully covered) | Good (`k`) |
-| **Score threshold** | Post-filter (after top-k) | **Pushed down** (`filter.min`) |
+| Criteria | **GSI Vector (8.0, covering)** | **FTS Vector (7.6+)** |
+|----------|--------------------------------|------------------------|
+| **Pure top-k** | Best (`ORDER BY … LIMIT`) | Good (`k` / `num_candidates`) |
+| **Score threshold** | Post-filter | Pushed down / prefilter |
 | **Hybrid text + vector** | Not supported | Supported |
-| **Recall tuning** | Fixed IVF/PQ | Configurable |
-| **Index size** | **Slightly larger** (w/ INCLUDE) | Larger |
-| **Real-time upserts** | Fast | Slightly slower |
-| **Query Latency** | **Lower** (no KV for covered fields) | Good (index-based projection) |
-| **Use-case** | **Recommendation engines, pure ANN, high-QPS reads** | **Search + similarity, RAG, multi-modal** |
+| **This repo on 7.6.x** | Not available | **Use this** |
+| **Use-case** | High-QPS ANN, recommendations | Search + similarity, RAG, hybrid |
 
-**Rule of thumb:**  
-*Start with **covering GSI** for pure vector top-k + projected fields.*  
-*Switch to FTS when you need hybrid search, pushed filters, or non-vector text matching.*  
-*Monitor w/ `EXPLAIN` & Couchbase Metrics – covering can halve p99 latency!*
+**Rule of thumb:** On 7.6, start with FTS `cake.us.vect`. On 8.0, add covering GSI for pure vector top-k.
 
 ---
 
 ## References
 
-- [CREATE VECTOR INDEX](https://docs.couchbase.com/cloud/n1ql/n1ql-language-reference/createvectorindex.html) – SQL++ syntax for vector indexes
-- [Vector Search Overview](https://docs.couchbase.com/cloud/vector-search/vector-search.html) – Introduction to vector search in Couchbase
-- [APPROX_VECTOR_DISTANCE Function](https://docs.couchbase.com/cloud/n1ql/n1ql-language-reference/vectorfun.html) – Query function for similarity calculations
-- [FTS Vector Search](https://docs.couchbase.com/cloud/search/search-request-params.html#knn) – Full-Text Search with KNN vectors
-- [Python SDK Vector Search](https://docs.couchbase.com/python-sdk/current/howtos/full-text-searching-with-sdk.html#vector-search) – Python SDK examples
+- [Python SDK vector search](https://docs.couchbase.com/python-sdk/current/howtos/vector-searching-with-sdk.html)
+- [CREATE VECTOR INDEX](https://docs.couchbase.com/cloud/n1ql/n1ql-language-reference/createvectorindex.html) (Server 8.0+)
+- [APPROX_VECTOR_DISTANCE](https://docs.couchbase.com/cloud/n1ql/n1ql-language-reference/vectorfun.html)
+- [FTS knn](https://docs.couchbase.com/cloud/search/search-request-params.html#knn)
+- [Create a Search index (REST)](https://docs.couchbase.com/server/current/search/create-search-index-rest-api.html)
+- [Search index params](https://docs.couchbase.com/server/current/search/search-index-params.html)
 
 ---
 
 ## You’re Done!
 
-* **4 docs loaded**  
-* **Both indexes built** (GSI now **covering**)  
-* **Top-k and filtered queries** (`LIMIT 2`, covered where possible)  
-* **Single source of truth** for the query vector (`sample_vector_query_topk.json`)  
-* **Scalable patterns** ready for millions of docs + high throughput  
+- **4 docs** in `cake.us.orders`
+- **FTS index** `cake.us.vect` (7.6+)
+- **SDK** `VectorQuery` + pre-filter + SQL++ `SEARCH` knn
+- **GSI vector** only if the cluster is 8.0+
 
-**Next steps:** Add more INCLUDE fields (e.g., `population`), hybrid FTS+GSI, RAG pipelines, or benchmark covering vs. non-covering latency.  
-
-What do you think – want to extend the covering to more fields, or dive into FTS hybrid tweaks? Let's build!
+**Next steps:** hybrid FTS (text + knn), more INCLUDE fields on 8.0, or a real embedding model in place of the canned 128-dim vectors.

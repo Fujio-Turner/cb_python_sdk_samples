@@ -1,6 +1,6 @@
 # Couchbase Python SDK Sample Scripts Overview
 
-This repository contains comprehensive examples demonstrating various Couchbase operations using the Python SDK. Each script is designed to illustrate specific features and best practices.
+This repository contains examples of Couchbase operations using **Python SDK 4.6.3** (Python 3.10–3.14). Each script is copy-pasteable and uses `Cluster.connect()` (async: `await Cluster.connect()` then `await bucket.on_connect()`).
 
 ---
 
@@ -81,9 +81,10 @@ Comprehensive guide to handling Couchbase exceptions:
 - **DocumentNotFoundException** - Handle missing documents
 - **ParsingFailedException** - Invalid query syntax
 - **TimeoutException** - Operation timeouts and retries
-- **CASMismatchException** - Optimistic locking conflicts
+- **CASMismatchException** - Optimistic locking conflicts (`CasMismatchException` is an alias)
 - **ServiceUnavailableException** - Service availability issues
-- Import data from CSV/Excel with error handling
+- Import data from CSV/Excel with error handling (`upsert_multi`)
+- Durability examples need replica count ≥ 1
 - Production-ready error handling patterns
 
 **Key Concepts**: Exception hierarchy, retry logic, defensive programming, data import
@@ -138,32 +139,34 @@ Shows transactional query operations:
 ---
 
 ### **09_cb_fts_search.py** - Full-Text Search (FTS) - SQL++ and Native SDK
-Comprehensive full-text search demonstrating **both approaches**:
+Both approaches use the **same scoped index**. Create it first:
+
+```bash
+python3 fts/create_hotels_index.py
+```
+
+That PUTs `fts/hotels-index.json` to
+`http://localhost:8094/api/bucket/travel-sample/scope/inventory/index/hotels-index`
+(Search Service required; type mapping `inventory.hotel`; stored fields `name`, `country`, `city`, `description`). Omit `uuid` / `sourceUUID` on create. Use an explicit `Authorization: Basic ...` header.
 
 **SQL++ SEARCH() Function (3 examples):**
-- Basic text search
-- Wildcard search (`fran*`)
-- Boolean AND search
+- Basic text search, wildcard (`fran*`), boolean AND
 - Returns full documents
-- Works immediately (no scope-level index needed)
+- Index option **must** be the fully-qualified name `travel-sample.inventory.hotels-index`
+- Bare `hotels-index` or `inventory.hotels-index` fails with n1fty “index mapping not found”
 
 **Native SDK Search API (3 examples):**
-- `MatchQuery` - Match term in field
-- `MatchPhraseQuery` - Exact phrase matching
-- `ConjunctionQuery` - AND logic (multiple conditions)
-- Uses `scope.search()` for the scoped `hotels-index` (`fts/hotels-index.json`)
-- Create the index with `python3 fts/create_hotels_index.py` (Search REST API, port 8094)
-- `ConjunctionQuery([q1, q2])` list form (SDK 4.5+)
-- Returns document IDs (faster, ~40x)
-- Composable, type-safe query objects
+- `MatchQuery`, `MatchPhraseQuery`, `ConjunctionQuery([q1, q2])` (list form, SDK 4.5+)
+- `scope.search("hotels-index", SearchRequest.create(...))` — correct for this **scoped** index
+- `cluster.search()` is only for **global** indexes (`USE_CLUSTER_SEARCH_EXAMPLE = False`)
+- Returns document IDs / stored fields (faster than fetching full docs via SQL++)
 
 **Detailed Comparison:**
-- SQL++ Pros: JOINs, aggregations, full documents, quick setup
+- SQL++ Pros: JOINs, aggregations, full documents
 - SDK Pros: Index aliases, fewer network hops, scan consistency, lower latency
-- When to use each approach with real-world guidance
-- Performance differences demonstrated
+- Both need the scoped index; SQL++ is not a “no index” shortcut
 
-**Key Concepts**: FTS, SQL++ SEARCH(), native SDK API, MatchQuery, ConjunctionQuery, index aliases, cluster.search(), search performance, query composition
+**Key Concepts**: FTS, SQL++ SEARCH(), `scope.search()`, MatchQuery, ConjunctionQuery, scoped vs global indexes
 
 ---
 
@@ -187,7 +190,7 @@ Demonstrates comprehensive debugging and tracing:
 Demonstrates high-performance async operations using a production-ready class structure:
 - **AsyncCouchbaseClient Class**:
   - `__init__()` - Initialize with connection and retry configuration
-  - `async connect()` - Connect with TLS, WAN profile, observability
+  - `async connect()` - `await Cluster.connect` + `await bucket.on_connect()`; TLS, WAN profile, observability
   - `async upsert_document()` - Single doc upsert with retry
   - `async get_document()` - Single doc get with retry
   - `async remove_document()` - Single doc remove with retry
@@ -227,6 +230,29 @@ Demonstrates async query operations with comprehensive best practices:
 - **Query metrics** - execution_time, result_count, percentiles
 
 **Key Concepts**: Async queries, SQL++/N1QL, query profiling, prepared statements, use_replica, scan consistency, bind variables, backticks, timeouts, observability, exponential backoff
+
+---
+
+### **13_cb_increment.py** - Binary Counters
+Demonstrates atomic counter documents:
+- `collection.binary().increment` / `decrement`
+- `IncrementOptions` / `DeltaValue` / `SignedInt64`
+- Close the cluster in `finally` (do not reconnect the same instance)
+
+**Key Concepts**: Binary API, atomic counters, SDK 4.6 connect/close
+
+---
+
+### **ai_vector_sample/** - Vector Search (FTS on 7.6, GSI on 8.0)
+Uses **`cake.us.orders`** (4 country docs, 128-dim embeddings), not travel-sample.
+
+- Create indexes: `python3 ai_vector_sample/create_vector_indexes.py`
+- **FTS vector** `cake.us.vect` — Server **7.6+** (SQL++ `SEARCH(..., knn)` + SDK `VectorQuery`)
+- **GSI `CREATE VECTOR INDEX` / `APPROX_VECTOR_DISTANCE`** — Server **8.0+** (skipped on 7.6)
+- SDK 4.6: `SearchRequest.create(VectorSearch.from_vector_query(VectorQuery(...)))` then `scope.search("vect", request)`
+- Pre-filter: `VectorQuery.create(..., prefilter=MatchQuery(...))`
+
+See [ai_vector_sample/README.md](ai_vector_sample/README.md).
 
 ---
 
@@ -350,6 +376,21 @@ Demonstrates bulk data import:
         print(f"Replica: {result.is_replica}, CAS: {result.cas}")
     ```
 
+14. **Zone-aware replica read (SDK 4.6)**
+    - Collection has **no** `get_replica_from_preferred_server_group()` (that is a transaction `AttemptContext` API).
+    ```python
+    from couchbase.options import GetAnyReplicaOptions, ClusterOptions
+    from couchbase.replica_reads import ReadPreference
+
+    options = ClusterOptions(auth, preferred_server_group="group-name")
+    cluster = Cluster.connect(f"couchbase://{ENDPOINT}", options)
+    result = collection.get_any_replica(
+        "document-key",
+        GetAnyReplicaOptions(read_preference=ReadPreference.SELECTED_SERVER_GROUP),
+    )
+    ```
+    On a 1-node / 0-replica cluster this raises `DocumentUnretrievableException`.
+
 ---
 
 ## ⚙️ Configuration
@@ -434,27 +475,29 @@ cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)  # Note: couchbas
 
 ## 🚀 Getting Started
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. Python **3.10+** and `pip install -r requirements.txt` (`couchbase==4.6.3`)
 
 2. Update connection settings in each script (ENDPOINT, USERNAME, PASSWORD)
 
-3. Ensure Couchbase Server is running with `travel-sample` bucket loaded
+3. Ensure Couchbase Server is running with `travel-sample` loaded
 
-4. Run individual scripts:
+4. For FTS (09): Search Service + `python3 fts/create_hotels_index.py`
+
+5. For vector: import `ai_vector_sample/01_vector_docs.json` into `cake.us.orders`, then `python3 ai_vector_sample/create_vector_indexes.py`
+
+6. Run individual scripts:
    ```bash
    python3 01a_cb_set_get.py
    ```
-
-5. Check logs and output for results
 
 ---
 
 ## 📖 Additional Resources
 
 - [Couchbase Python SDK Documentation](https://docs.couchbase.com/python-sdk/current/hello-world/start-using-sdk.html)
+- [SDK 4.6 release notes](https://docs.couchbase.com/python-sdk/current/project-docs/sdk-release-notes.html)
 - [N1QL Query Language Reference](https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/index.html)
 - [Full-Text Search Guide](https://docs.couchbase.com/server/current/fts/fts-introduction.html)
+- [Create a Search index (REST)](https://docs.couchbase.com/server/current/search/create-search-index-rest-api.html)
+- [Vector search with the SDK](https://docs.couchbase.com/python-sdk/current/howtos/vector-searching-with-sdk.html)
 - [Transactions Documentation](https://docs.couchbase.com/python-sdk/current/howtos/distributed-acid-transactions-from-the-sdk.html)

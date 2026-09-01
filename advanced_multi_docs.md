@@ -1,6 +1,8 @@
 # Couchbase Python SDK Multi Operations Examples
 
-This document demonstrates batch operations for improved performance when working with multiple documents simultaneously. Multi operations reduce network round-trips and improve throughput.
+Batch operations with **Python SDK 4.6.3** (`Cluster.connect()`). Multi operations reduce network round-trips and improve throughput.
+
+`excel_to_json_to_cb.py` uses `collection.upsert_multi(...)` (there is no `mutate_in_batch` in this SDK).
 
 ## Benefits of Multi Operations
 - **Reduced Network Overhead**: Single request for multiple documents
