@@ -95,7 +95,7 @@ Demonstrates reading from replica nodes for high availability:
 - **get_with_retry()** - Retry logic with replica fallback
 - **get_any_replica()** - Read from fastest available replica (load balancing)
 - **get_all_replicas()** - Read from all replicas (consistency checking)
-- **get_replica_from_preferred_server_group()** - Zone-aware replica reads (SDK 4.4+ / 4.6)
+- **get_any_replica(ReadPreference.SELECTED_SERVER_GROUP)** - Zone-aware replica reads (SDK 4.4+ / 4.6; Collection has no get_replica_from_preferred_server_group)
 - Simulate timeout scenarios to trigger replica reads
 - Understand replica lag and data consistency (`DocumentUnretrievableException` if no replica answers)
 

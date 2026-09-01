@@ -391,7 +391,7 @@ grep -r "NetworkException" *.py  # Should use ServiceUnavailableException
 - Native OpenTelemetry tracing (`get_otel_tracer`) and `LoggingMeter` (`ClusterMetricsOptions`)
 - `Cluster.connect()` is the documented connect path; a closed cluster cannot be reused
 - Python 3.10–3.14 (3.9 wheels dropped)
-- Zone-aware replica reads (`get_replica_from_preferred_server_group`)
+- Zone-aware replica reads (`get_any_replica` + `ReadPreference.SELECTED_SERVER_GROUP`; txn API is `AttemptContext.get_replica_from_preferred_server_group`)
 - Vector search pre-filters and GSI/hyperscale vector query (4.5+)
 - `CASMismatchException` as the documented CAS exception name
 

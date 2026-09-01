@@ -266,18 +266,18 @@ class TestPreferredServerGroupReplica(unittest.TestCase):
 
     def test_preferred_server_group_success(self):
         mock_coll = Mock()
-        mock_coll.get_replica_from_preferred_server_group.return_value = self.mock_result
-        result = mock_coll.get_replica_from_preferred_server_group("airline_10")
+        mock_coll.get_any_replica.return_value = self.mock_result
+        result = mock_coll.get_any_replica("airline_10")
         self.assertTrue(result.is_replica)
-        mock_coll.get_replica_from_preferred_server_group.assert_called_once_with("airline_10")
+        mock_coll.get_any_replica.assert_called_once_with("airline_10")
 
     def test_preferred_server_group_unretrievable(self):
         mock_coll = Mock()
-        mock_coll.get_replica_from_preferred_server_group.side_effect = DocumentUnretrievableException(
+        mock_coll.get_any_replica.side_effect = DocumentUnretrievableException(
             "no replica in group"
         )
         with self.assertRaises(DocumentUnretrievableException):
-            mock_coll.get_replica_from_preferred_server_group("airline_10")
+            mock_coll.get_any_replica("airline_10")
 
 
 if __name__ == '__main__':

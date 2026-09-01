@@ -12,8 +12,11 @@ Key functions demonstrated:
 1. get() - Standard read from active node with retry logic
 2. get_any_replica() - Read from any available replica (fastest response)
 3. get_all_replicas() - Read from all replicas (compare data across nodes)
+4. get_any_replica(ReadPreference.SELECTED_SERVER_GROUP) - zone-aware replica read
 
 Note: Replicas may have slightly stale data due to replication lag.
+Collection has no get_replica_from_preferred_server_group(); that API is on
+transaction AttemptContext. KV zone-aware reads use GetAnyReplicaOptions.
 """
 from datetime import timedelta
 import time
@@ -22,7 +25,8 @@ import time
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
 # needed for options -- cluster, timeout, SQL++ (N1QL) query, etc.
-from couchbase.options import (ClusterOptions)
+from couchbase.options import ClusterOptions, GetAnyReplicaOptions
+from couchbase.replica_reads import ReadPreference
 
 # needed for exception handling
 from couchbase.exceptions import (
@@ -188,16 +192,24 @@ def get_all_replicas_example(key):
 # Example 5: Zone-aware replica read (SDK 4.4+ / Server 7.6+)
 def get_preferred_server_group_example(key):
     """
-    Read from a replica in the SDK's preferred server group (zone-aware).
-    Configure the group via ClusterOptions(preferred_server_group=...) or the
-    connection string. Raises DocumentUnretrievableException if no replica in
-    that group can answer.
+    KV zone-aware replica read: get_any_replica + ReadPreference.SELECTED_SERVER_GROUP.
+    Set ClusterOptions(preferred_server_group='...') at connect time so the SDK
+    knows which group to use. Raises DocumentUnretrievableException if no replica
+    in that group can answer.
+
+    (get_replica_from_preferred_server_group exists on transaction AttemptContext,
+    not on Collection.)
     """
     print(f"\n--- Example 5: Get '{key}' from Preferred Server Group ---")
+    print("  Uses get_any_replica(read_preference=SELECTED_SERVER_GROUP).")
+    print("  Needs ClusterOptions(preferred_server_group=...) and replica count >= 1.")
     start_time = time.time()
     try:
-        result = cb_coll.get_replica_from_preferred_server_group(key)
-        print(f"✓ Retrieved from preferred server group")
+        result = cb_coll.get_any_replica(
+            key,
+            GetAnyReplicaOptions(read_preference=ReadPreference.SELECTED_SERVER_GROUP),
+        )
+        print(f"✓ Retrieved with selected-server-group preference")
         print(f"  Content: {result.content_as[dict]}")
         print(f"  CAS: {result.cas}")
         print(f"  is_replica: {result.is_replica}")
@@ -210,6 +222,7 @@ def get_preferred_server_group_example(key):
         print(f"✗ Document '{key}' not found")
     except CouchbaseException as e:
         print(f"✗ Error: {e}")
+        print("  Typical on a one-node cluster with 0 replicas or no preferred_server_group.")
     return None
 
 
