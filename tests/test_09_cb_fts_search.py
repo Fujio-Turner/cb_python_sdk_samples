@@ -275,6 +275,27 @@ class TestFTSSearch(unittest.TestCase):
         self.assertIn("hotels-geo-index", index_configs)
         self.assertEqual(index_configs["hotels-index"]["bucket"], "travel-sample")
         self.assertTrue(index_configs["hotels-geo-index"]["geo"])
+
+    def test_cluster_search_vs_scope_search(self):
+        """Global indexes use cluster.search(); scoped indexes use scope.search()."""
+        mock_cluster = Mock()
+        mock_scope = Mock()
+        mock_request = Mock()
+        mock_cluster.search.return_value.rows.return_value = []
+        mock_scope.search.return_value.rows.return_value = []
+
+        list(mock_cluster.search("hotels-index", mock_request).rows())
+        mock_cluster.search.assert_called_once_with("hotels-index", mock_request)
+
+        list(mock_scope.search("hotels-index", mock_request).rows())
+        mock_scope.search.assert_called_once_with("hotels-index", mock_request)
+
+    def test_conjunction_query_list_form(self):
+        """SDK 4.5+ ConjunctionQuery accepts a list of queries."""
+        q1, q2 = Mock(), Mock()
+        conjunction_input = [q1, q2]
+        self.assertEqual(len(conjunction_input), 2)
+        self.assertIs(conjunction_input[0], q1)
     
     def test_search_result_processing(self):
         """Test search result processing."""

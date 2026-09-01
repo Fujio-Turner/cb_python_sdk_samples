@@ -110,12 +110,12 @@ class TestDebugTracing(unittest.TestCase):
             
             auth = PasswordAuthenticator("Administrator", "password")
             options = ClusterOptions(auth)
-            cluster = Cluster('couchbase://your-ip', options)
+            cluster = Cluster.connect('couchbase://your-ip', options)
             
             # Verify calls
             mock_auth.assert_called_once_with("Administrator", "password")
             mock_options.assert_called_once_with(mock_auth_instance)
-            mock_cluster_class.assert_called_once_with('couchbase://your-ip', mock_options_instance)
+            mock_cluster_class.connect.assert_called_once_with('couchbase://your-ip', mock_options_instance)
     
     def test_wait_until_ready_configuration(self):
         """Test wait_until_ready configuration."""
@@ -223,11 +223,25 @@ class TestDebugTracing(unittest.TestCase):
             from couchbase.options import ClusterOptions
             from couchbase.auth import PasswordAuthenticator
             
-            cluster = Cluster('couchbase://your-ip', 
+            cluster = Cluster.connect('couchbase://your-ip', 
                             ClusterOptions(PasswordAuthenticator("Administrator", "password")))
             
             # Verify cluster was created
-            mock_cluster_class.assert_called_once()
+            mock_cluster_class.connect.assert_called_once()
+
+    def test_native_otel_tracer_passed_to_cluster_options(self):
+        """SDK 4.6: get_otel_tracer() result is passed as ClusterOptions(tracer=...)."""
+        mock_tracer = MagicMock()
+        mock_otel = MagicMock()
+        mock_otel.get_otel_tracer.return_value = mock_tracer
+        with patch.dict(sys.modules, {
+            'couchbase.observability': MagicMock(),
+            'couchbase.observability.otel_tracing': mock_otel,
+        }):
+            from couchbase.observability.otel_tracing import get_otel_tracer
+            tracer = get_otel_tracer(MagicMock())
+            self.assertIs(tracer, mock_tracer)
+            mock_otel.get_otel_tracer.assert_called_once()
     
     def test_main_function_execution(self):
         """Test main function execution."""

@@ -181,5 +181,27 @@ class TestExcelToJsonToCb(unittest.TestCase):
         
         mock_collection.insert.assert_called_once()
 
+    def test_bulk_import_uses_upsert_multi(self):
+        """SDK 4.x bulk path is upsert_multi(dict), not mutate_in_batch."""
+        mock_collection = MagicMock()
+        mock_result = MagicMock()
+        mock_result.results = {"excel_doc_0": MagicMock(), "excel_doc_1": MagicMock()}
+        mock_result.exceptions = {}
+        mock_collection.upsert_multi.return_value = mock_result
+
+        data = [
+            {"id": "excel_doc_0", "name": "A"},
+            {"id": "excel_doc_1", "name": "B"},
+        ]
+        docs = {doc["id"]: doc for doc in data}
+        result = mock_collection.upsert_multi(docs)
+
+        mock_collection.upsert_multi.assert_called_once_with(docs)
+        mock_collection.mutate_in_batch.assert_not_called()
+        self.assertEqual(len(result.results), 2)
+        self.assertEqual(result.exceptions, {})
+
+
 if __name__ == '__main__':
     unittest.main()
+

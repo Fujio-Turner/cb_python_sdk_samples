@@ -1,12 +1,16 @@
 # Couchbase Python SDK Multi Operations Examples
 
-This document demonstrates batch operations for improved performance when working with multiple documents simultaneously. Multi operations reduce network round-trips and improve throughput.
+Batch operations with **Python SDK 4.6.3** (`Cluster.connect()`). Multi operations reduce network round-trips and improve throughput.
+
+`excel_to_json_to_cb.py` uses `collection.upsert_multi(...)` (there is no `mutate_in_batch` in this SDK).
 
 ## Benefits of Multi Operations
 - **Reduced Network Overhead**: Single request for multiple documents
 - **Better Throughput**: Batch operations are more efficient
 - **Simplified Code**: Handle multiple operations in one call
 - **Performance**: Especially beneficial for high-volume applications
+
+**SDK 4.6:** If you pass durability on a multi-op, every per-key option in that call must use the same durability type (all server durability, or all client durability — do not mix).
 
 ## Connection Setup
 
@@ -23,11 +27,11 @@ PASSWORD = "password"
 # Connect to the cluster
 auth = PasswordAuthenticator(USERNAME, PASSWORD)
 options = ClusterOptions(auth)
-cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
 
 # For Capella (cloud), use this instead:
 # options.apply_profile('wan_development')
-# cluster = Cluster(f'couchbases://{ENDPOINT}', options)
+# cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)
 
 bucket = cluster.bucket('travel-sample')
 collection = bucket.default_collection()  # Or use scope/collection

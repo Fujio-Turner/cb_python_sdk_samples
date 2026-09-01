@@ -74,7 +74,7 @@ from couchbase.exceptions import (
     AuthenticationException,
     DocumentNotFoundException,
     DocumentExistsException,
-    CasMismatchException,
+    CASMismatchException,
     InvalidArgumentException,
     PathNotFoundException,
     BucketNotFoundException,
@@ -101,6 +101,7 @@ CB_SCOPE = "inventory"
 CB_COLLECTION = "airline"
 # User Input ends here.
 
+cluster = None
 try:
     # Connect options - authentication
     auth = PasswordAuthenticator(USERNAME, PASSWORD)
@@ -109,11 +110,11 @@ try:
     options = ClusterOptions(auth)
     
     # For local/self-hosted Couchbase Server:
-    cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+    cluster = Cluster.connect('couchbase://{}'.format(ENDPOINT), options)
     
     # For Capella (cloud), use this instead (uncomment and comment out the line above):
     # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-    # cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
+    # cluster = Cluster.connect('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
     # Wait until the cluster is ready for use.
     cluster.wait_until_ready(timedelta(seconds=10))
@@ -227,3 +228,9 @@ doc2 = {
 upsert_document(key2, doc2)
 
 move_numbers_n1ql(key1, key2, 3)
+
+# SDK 4.6: a closed cluster cannot be reconnected — create a new Cluster.connect() instead.
+if cluster:
+    print("\nClosing connection to Couchbase cluster...")
+    cluster.close()
+    print("Connection closed.")

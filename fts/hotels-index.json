@@ -1,8 +1,8 @@
 {
   "type": "fulltext-index",
-  "name": "vect",
+  "name": "hotels-index",
   "sourceType": "gocbcore",
-  "sourceName": "cake",
+  "sourceName": "travel-sample",
   "planParams": {
     "indexPartitions": 1,
     "numReplicas": 0
@@ -25,11 +25,11 @@
       },
       "default_type": "_default",
       "docvalues_dynamic": false,
-      "index_dynamic": false,
+      "index_dynamic": true,
       "store_dynamic": false,
       "type_field": "_type",
       "types": {
-        "us.orders": {
+        "inventory.hotel": {
           "dynamic": false,
           "enabled": true,
           "properties": {
@@ -48,12 +48,12 @@
                 }
               ]
             },
-            "capital": {
+            "country": {
               "dynamic": false,
               "enabled": true,
               "fields": [
                 {
-                  "name": "capital",
+                  "name": "country",
                   "type": "text",
                   "index": true,
                   "store": true,
@@ -63,17 +63,33 @@
                 }
               ]
             },
-            "embedding": {
+            "city": {
               "dynamic": false,
               "enabled": true,
               "fields": [
                 {
-                  "name": "embedding",
-                  "type": "vector",
-                  "dims": 128,
+                  "name": "city",
+                  "type": "text",
                   "index": true,
-                  "similarity": "cosine",
-                  "vector_index_optimized_for": "latency"
+                  "store": true,
+                  "docvalues": true,
+                  "include_in_all": true,
+                  "include_term_vectors": true
+                }
+              ]
+            },
+            "description": {
+              "dynamic": false,
+              "enabled": true,
+              "fields": [
+                {
+                  "name": "description",
+                  "type": "text",
+                  "index": true,
+                  "store": true,
+                  "docvalues": true,
+                  "include_in_all": true,
+                  "include_term_vectors": true
                 }
               ]
             }

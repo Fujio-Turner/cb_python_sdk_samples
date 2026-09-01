@@ -16,7 +16,8 @@ Logging vs Tracing vs Orphan Reporting:
 - Orphaned Request Reporting: Logs responses for requests the client already gave up on
   (i.e. the operation timed out client-side, but the server eventually finished it).
   Useful to detect timeouts that are too aggressive, slow nodes, or network lag.
-- OpenTelemetry Tracing: Good for understanding request flow and performance across services
+- OpenTelemetry Tracing: SDK 4.6 natively exports KV/query spans via get_otel_tracer()
+- LoggingMeter: native request-percentile metrics (ClusterMetricsOptions)
 
 Use Cases:
 - Debugging slow operations (identify performance bottlenecks)
@@ -27,8 +28,11 @@ Use Cases:
 - Distributed system observability
 
 Reference docs:
+- https://docs.couchbase.com/python-sdk/current/howtos/observability-tracing.html
+- https://docs.couchbase.com/python-sdk/current/howtos/observability-metrics.html
 - https://docs.couchbase.com/python-sdk/current/howtos/slow-operations-logging.html
 - https://docs.couchbase.com/python-sdk/current/howtos/observability-orphan-logger.html
+Install: pip install 'couchbase[otel]==4.6.3'  (or opentelemetry-api / opentelemetry-sdk ~= 1.22)
 """
 
 import logging
@@ -51,12 +55,16 @@ from couchbase.options import (
     ClusterOptions,
     WaitUntilReadyOptions,
     ClusterTracingOptions,
+    ClusterMetricsOptions,
     UpsertOptions,
     QueryOptions,
+    GetOptions,
 )
+from couchbase.observability.otel_tracing import get_otel_tracer
 
 # OpenTelemetry imports
 from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -77,15 +85,17 @@ logger = logging.getLogger()  # Get the root logger
 # emit their JSON forensic reports through Python's logging module.
 couchbase.configure_logging(logger.name, level=logger.level)
 
-# Set up OpenTelemetry
-# This configures OpenTelemetry to trace our application
-trace.set_tracer_provider(TracerProvider())  # Set up a tracer provider
-tracer = trace.get_tracer(__name__)  # Get a tracer for this module
-
-# Add a SimpleSpanProcessor that prints to the console
-trace.get_tracer_provider().add_span_processor(
-    SimpleSpanProcessor(ConsoleSpanExporter())
-)
+# Set up OpenTelemetry and hand the tracer to the Couchbase SDK (native as of 4.6).
+# pip install couchbase[otel]  (or opentelemetry-api / opentelemetry-sdk ~= 1.22)
+resource = Resource.create(attributes={
+    "service.name": "cb-python-sdk-samples",
+    "service.version": "4.6.3",
+})
+tracer_provider = TracerProvider(resource=resource)
+tracer_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+trace.set_tracer_provider(tracer_provider)
+tracer = trace.get_tracer(__name__)
+couchbase_tracer = get_otel_tracer(tracer_provider)
 
 # Connection configuration
 # For local/self-hosted Couchbase Server:
@@ -138,17 +148,20 @@ def perform_couchbase_operations():
         
         # Create ClusterOptions with tracing enabled for slow operations logging
         # AND orphaned request reporting (both come from `tracing_opts`).
+        metrics_opts = ClusterMetricsOptions(emit_interval=timedelta(seconds=10))
         options = ClusterOptions(
             authenticator=auth,
-            tracing_options=tracing_opts
+            tracing_options=tracing_opts,
+            tracer=couchbase_tracer,
+            metrics_options=metrics_opts,
         )
         
         # For local/self-hosted Couchbase Server:
-        cluster = Cluster(f'couchbase://{ENDPOINT}', options)
+        cluster = Cluster.connect(f'couchbase://{ENDPOINT}', options)
         
         # For Capella (cloud), use this instead (uncomment and comment out the line above):
         # options.apply_profile('wan_development')
-        # cluster = Cluster(f'couchbases://{ENDPOINT}', options)
+        # cluster = Cluster.connect(f'couchbases://{ENDPOINT}', options)
         
         logger.info(f"Connecting to cluster at {ENDPOINT}...")
         
@@ -183,7 +196,7 @@ def perform_couchbase_operations():
             try:
                 doc_key = "airline_10"
                 logger.info(f"Attempting to get document '{doc_key}'")
-                result = coll.get(doc_key)
+                result = coll.get(doc_key, GetOptions(parent_span=trace.get_current_span()))
                 logger.info(f"✓ Successfully retrieved document '{doc_key}'")
                 logger.debug(f"Document content: {result.content_as[dict]}")
                 print(f"✓ Successfully retrieved '{doc_key}'")

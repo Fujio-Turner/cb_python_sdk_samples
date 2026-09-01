@@ -20,6 +20,10 @@ The maximum number of subdocument operations that can be executed in a single Mu
 LookupIn request is 16. This means you can combine up to 16 individual subdocument operations 
 (like upsert, insert, remove, get, etc.) within one MutateIn or LookupIn call. If you try 
 to perform more than 16 operations in a single request, it will fail.
+
+SDK 4.6.2+: projected *get* (not lookup_in specs) can request more than 16 paths; missing
+paths are skipped instead of aborting the whole projection. That does not raise the 16-spec
+limit on lookup_in / mutate_in.
 """
 from datetime import timedelta
 import time
@@ -55,11 +59,11 @@ auth = PasswordAuthenticator(USERNAME, PASSWORD)
 options = ClusterOptions(auth)
 
 # For local/self-hosted Couchbase Server:
-cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+cluster = Cluster.connect('couchbase://{}'.format(ENDPOINT), options)
 
 # For Capella (cloud), use this instead (uncomment and comment out the line above):
 # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-# cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
+# cluster = Cluster.connect('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
 # Wait until the cluster is ready for use.
 cluster.wait_until_ready(timedelta(seconds=10))
@@ -96,6 +100,8 @@ def sub_get_airline(key):
             SD.get("name"),
             SD.get("timestamp")
         ])
+        # Scalar fields: content_as[str](index). JSON objects would use content_as[dict](index).
+        # 4.6.3: LookupInResult/MutateInResult.content_as() is constructed with a transcoder.
         print("Name:", result.content_as[str](0))
         print("Timestamp:", result.content_as[str](1))
         print("CAS:", result.cas)

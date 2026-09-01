@@ -241,6 +241,7 @@ class AsyncCouchbaseQueryClient:
             await self.cluster.wait_until_ready(timedelta(seconds=10))
             
             self.bucket = self.cluster.bucket(self.bucket_name)
+            await self.bucket.on_connect()
             
             if DEBUG:
                 elapsed = time.time() - start_time

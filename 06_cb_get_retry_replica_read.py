@@ -12,8 +12,11 @@ Key functions demonstrated:
 1. get() - Standard read from active node with retry logic
 2. get_any_replica() - Read from any available replica (fastest response)
 3. get_all_replicas() - Read from all replicas (compare data across nodes)
+4. get_any_replica(ReadPreference.SELECTED_SERVER_GROUP) - zone-aware replica read
 
 Note: Replicas may have slightly stale data due to replication lag.
+Collection has no get_replica_from_preferred_server_group(); that API is on
+transaction AttemptContext. KV zone-aware reads use GetAnyReplicaOptions.
 """
 from datetime import timedelta
 import time
@@ -22,7 +25,8 @@ import time
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
 # needed for options -- cluster, timeout, SQL++ (N1QL) query, etc.
-from couchbase.options import (ClusterOptions)
+from couchbase.options import ClusterOptions, GetAnyReplicaOptions
+from couchbase.replica_reads import ReadPreference
 
 # needed for exception handling
 from couchbase.exceptions import (
@@ -30,7 +34,8 @@ from couchbase.exceptions import (
     TimeoutException,
     AuthenticationException,
     DocumentNotFoundException,
-    BucketNotFoundException
+    BucketNotFoundException,
+    DocumentUnretrievableException,
 )
 
 # Update this to your cluster
@@ -57,11 +62,11 @@ try:
     options = ClusterOptions(auth)
     
     # For local/self-hosted Couchbase Server:
-    cluster = Cluster('couchbase://{}'.format(ENDPOINT), options)
+    cluster = Cluster.connect('couchbase://{}'.format(ENDPOINT), options)
     
     # For Capella (cloud), use this instead (uncomment and comment out the line above):
     # options.apply_profile('wan_development')  # Helps avoid latency issues with Capella
-    # cluster = Cluster('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
+    # cluster = Cluster.connect('couchbases://{}'.format(ENDPOINT), options)  # Note: couchbaseS (secure)
 
     # Wait until the cluster is ready for use.
     cluster.wait_until_ready(timedelta(seconds=10))
@@ -184,6 +189,43 @@ def get_all_replicas_example(key):
         print(f"✗ Error: {e}")
 
 
+# Example 5: Zone-aware replica read (SDK 4.4+ / Server 7.6+)
+def get_preferred_server_group_example(key):
+    """
+    KV zone-aware replica read: get_any_replica + ReadPreference.SELECTED_SERVER_GROUP.
+    Set ClusterOptions(preferred_server_group='...') at connect time so the SDK
+    knows which group to use. Raises DocumentUnretrievableException if no replica
+    in that group can answer.
+
+    (get_replica_from_preferred_server_group exists on transaction AttemptContext,
+    not on Collection.)
+    """
+    print(f"\n--- Example 5: Get '{key}' from Preferred Server Group ---")
+    print("  Uses get_any_replica(read_preference=SELECTED_SERVER_GROUP).")
+    print("  Needs ClusterOptions(preferred_server_group=...) and replica count >= 1.")
+    start_time = time.time()
+    try:
+        result = cb_coll.get_any_replica(
+            key,
+            GetAnyReplicaOptions(read_preference=ReadPreference.SELECTED_SERVER_GROUP),
+        )
+        print(f"✓ Retrieved with selected-server-group preference")
+        print(f"  Content: {result.content_as[dict]}")
+        print(f"  CAS: {result.cas}")
+        print(f"  is_replica: {result.is_replica}")
+        print(f"  Time: {time.time() - start_time:.3f}s")
+        return result
+    except DocumentUnretrievableException:
+        print("✗ No replica in the preferred server group could serve this key")
+        print("  Configure replicas and ClusterOptions(preferred_server_group=...)")
+    except DocumentNotFoundException:
+        print(f"✗ Document '{key}' not found")
+    except CouchbaseException as e:
+        print(f"✗ Error: {e}")
+        print("  Typical on a one-node cluster with 0 replicas or no preferred_server_group.")
+    return None
+
+
 # Example 4: Simulate timeout scenario with very aggressive timeout
 def simulate_timeout_scenario(key):
     """
@@ -230,6 +272,9 @@ get_all_replicas_example(key)
 
 # Example 4: Simulate timeout scenario
 simulate_timeout_scenario(key)
+
+# Example 5: Zone-aware replica read (no-op unless preferred_server_group is set)
+get_preferred_server_group_example(key)
 
 print("\n" + "=" * 70)
 print("REPLICA READ EXAMPLES COMPLETE")

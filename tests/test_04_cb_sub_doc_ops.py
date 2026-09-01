@@ -13,7 +13,7 @@ class DocumentNotFoundException(Exception):
     pass
 
 
-class CasMismatchException(Exception):
+class CASMismatchException(Exception):
     pass
 
 
@@ -83,12 +83,12 @@ class TestCbSubDocOps(unittest.TestCase):
             self.mock_collection.lookup_in("nonexistent_key", operations)
 
     def test_subdocument_update_cas_mismatch(self):
-        self.mock_collection.mutate_in.side_effect = CasMismatchException("CAS mismatch")
+        self.mock_collection.mutate_in.side_effect = CASMismatchException("CAS mismatch")
         
         mock_sd_upsert = MagicMock()
         operations = [mock_sd_upsert("name", "Updated Airline")]
         
-        with self.assertRaises(CasMismatchException):
+        with self.assertRaises(CASMismatchException):
             self.mock_collection.mutate_in("test_key", operations, cas=9999999999)
 
     def test_complete_workflow(self):

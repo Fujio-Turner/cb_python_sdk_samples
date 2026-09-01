@@ -9,7 +9,7 @@ sys.modules['couchbase.options'] = MagicMock()
 sys.modules['couchbase.exceptions'] = MagicMock()
 
 
-class CasMismatchException(Exception):
+class CASMismatchException(Exception):
     pass
 
 
@@ -41,10 +41,10 @@ class TestCbGetUpdateWithCas(unittest.TestCase):
         self.mock_collection.replace.assert_called_once_with("test_key", test_doc, cas=1234567890)
 
     def test_cas_mismatch_exception(self):
-        self.mock_collection.replace.side_effect = CasMismatchException("CAS mismatch")
+        self.mock_collection.replace.side_effect = CASMismatchException("CAS mismatch")
         
         test_doc = {"type": "airline", "name": "Updated Airline"}
-        with self.assertRaises(CasMismatchException):
+        with self.assertRaises(CASMismatchException):
             self.mock_collection.replace("test_key", test_doc, cas=12345)
 
     def test_get_and_replace_workflow(self):

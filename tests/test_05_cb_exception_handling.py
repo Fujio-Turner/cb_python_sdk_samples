@@ -28,6 +28,18 @@ class CASMismatchException(Exception):
     pass
 
 
+class QueryErrorContext:
+    def __init__(self):
+        self.statement = "SELECT * FROM no_such_bucket"
+        self.first_error_code = 12003
+        self.first_error_message = "Keyspace not found"
+        self.client_context_id = "ctx-1"
+
+
+class DurabilitySyncWriteAmbiguousException(Exception):
+    pass
+
+
 class TestCbExceptionHandling(unittest.TestCase):
 
     def setUp(self):
@@ -180,17 +192,43 @@ class TestCbExceptionHandling(unittest.TestCase):
         self.assertEqual(result.cas, 1234567890)
         self.assertEqual(self.mock_collection.insert.call_count, 1)
 
+    def test_query_error_context(self):
+        """Query failures expose QueryErrorContext (statement, codes, client_context_id)."""
+        class QueryFailed(Exception):
+            def __init__(self):
+                super().__init__("query failed")
+                self.context = QueryErrorContext()
+
+        ex = QueryFailed()
+        self.assertTrue(isinstance(ex.context, QueryErrorContext))
+        self.assertEqual(ex.context.statement, "SELECT * FROM no_such_bucket")
+        self.assertEqual(ex.context.first_error_code, 12003)
+        self.assertIn("Keyspace", ex.context.first_error_message)
+        self.assertEqual(ex.context.client_context_id, "ctx-1")
+
+    def test_durability_ambiguous_then_exists_is_success(self):
+        """Retry durable insert: ambiguous write, then DocumentExistsException means success."""
+        self.mock_collection.insert.side_effect = [
+            DurabilitySyncWriteAmbiguousException("maybe written"),
+            DocumentExistsException("already there"),
+        ]
+        with self.assertRaises(DurabilitySyncWriteAmbiguousException):
+            self.mock_collection.insert("k", {"x": 1})
+        with self.assertRaises(DocumentExistsException):
+            self.mock_collection.insert("k", {"x": 1})
+        self.assertEqual(self.mock_collection.insert.call_count, 2)
+
     def test_connection_failure(self):
         """Test Couchbase connection failure handling."""
         with patch('couchbase.cluster.Cluster') as mock_cluster_class:
-            mock_cluster_class.side_effect = Exception("Connection failed")
+            mock_cluster_class.connect.side_effect = Exception("Connection failed")
             
             with self.assertRaises(Exception) as context:
                 from couchbase.cluster import Cluster
                 from couchbase.options import ClusterOptions
                 from couchbase.auth import PasswordAuthenticator
                 
-                Cluster("couchbase://localhost", ClusterOptions(PasswordAuthenticator("user", "pass")))
+                Cluster.connect("couchbase://localhost", ClusterOptions(PasswordAuthenticator("user", "pass")))
             
             self.assertIn("Connection failed", str(context.exception))
 

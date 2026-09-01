@@ -1,203 +1,151 @@
 # Unit Tests for Couchbase Python SDK Samples
 
-This directory contains comprehensive unit tests for all Python files in the Couchbase Python SDK samples repository.
+Mock unit tests for the Couchbase **Python SDK 4.6.3** samples. They do not need a live cluster.
 
 ## Overview
 
-The test suite covers 14 Python sample files, providing comprehensive testing of Couchbase operations including:
+The suite covers numbered samples 01–13, the prepared-statement wrapper, Excel import, the vector search script, and a syntax compile-check:
 
-- **Basic Operations**: Set, get, upsert, delete operations
-- **Advanced Operations**: Subdocument operations, CAS-based updates
-- **Query Operations**: N1QL queries, prepared statements
-- **Transaction Support**: Key-value and N1QL transactions
-- **Error Handling**: Comprehensive exception handling scenarios
-- **Search Operations**: Full-text search functionality
-- **Data Import**: CSV/Excel file processing and bulk imports
-- **Debugging**: Logging and OpenTelemetry tracing
-- **Replica Operations**: Retry logic and replica reads
+- **Basic Operations**: Set, get, upsert, delete, CAS
+- **Query Operations**: SQL++ queries, profiling, prepared statements
+- **Transaction Support**: Key-value and SQL++ transactions (tests exist; not all are in the runner)
+- **Error Handling**: Exception types including `CASMismatchException` and `QueryErrorContext`
+- **Search Operations**: FTS (`scope.search`, `ConjunctionQuery` list form)
+- **Vector Search**: `SearchRequest` + `VectorQuery` (execs the sample under mocks)
+- **Data Import**: CSV/Excel and `upsert_multi`
+- **Debugging**: Native OTel tracer / `ClusterMetricsOptions`
+- **Replica Operations**: `get_any_replica`, `get_all_replicas`, zone-aware `ReadPreference`
+- **Async**: `await Cluster.connect` + `await bucket.on_connect()`
+- **Syntax**: Compile-check every sample `.py`
 
 ## Test Files
 
 | Test File | Source File | Description |
 |-----------|-------------|-------------|
-| `test_01_cb_set_get.py` | `01_cb_set_get.py` | Tests basic set/get operations with timing |
-| `test_01a_cb_get_update_w_cas.py` | `01a_cb_get_update_w_cas.py` | Tests CAS-based updates and get operations |
-| `test_02_cb_upsert_delete.py` | `02_cb_upsert_delete.py` | Tests upsert and delete operations |
-| `test_03a_cb_query.py` | `03a_cb_query.py` | Tests N1QL query execution and parameters |
-| `test_03b_cb_query_profile.py` | `03b_cb_query_profile.py` | Tests N1QL query profiling |
-| `test_04_cb_sub_doc_ops.py` | `04_cb_sub_doc_ops.py` | Tests subdocument operations (lookup_in, mutate_in) |
-| `test_ai_vector_search.py` | `ai_vector_sample/04_vector_search_using_python_sdk.py` | Tests vector search script execution |
-| `test_05_cb_exception_handling.py` | `05_cb_exception_handling.py` | Tests comprehensive exception handling scenarios |
-| `test_06_cb_get_retry_replica_read.py` | `06_cb_get_retry_replica_read.py` | Tests retry logic and replica read functionality |
-| `test_07_cb_query_own_write.py` | `07_cb_query_own_write.py` | Tests query consistency and own-write scenarios |
-| `test_08a_cb_transaction_kv.py` | `08a_cb_transaction_kv.py` | Tests key-value transaction operations |
-| `test_08b_cb_transaction_query.py` | `08b_cb_transaction_query.py` | Tests N1QL transaction operations |
-| `test_09_cb_fts_search.py` | `09_cb_fts_search.py` | Tests full-text search operations |
-| `test_10_cb_debug_tracing.py` | `10_cb_debug_tracing.py` | Tests logging and OpenTelemetry tracing |
-| `test_advanced_prepared_statement_wrapper.py` | `advanced_prepared_statement_wrapper.py` | Tests prepared statement wrapper functionality |
-| `test_excel_to_json_to_cb.py` | `excel_to_json_to_cb.py` | Tests CSV/Excel file processing and bulk import |
+| `test_01_cb_set_get.py` | `01a_cb_set_get.py` | Basic set/get with timing |
+| `test_01a_cb_get_update_w_cas.py` | `01b_cb_get_update_w_cas.py` | CAS updates (`CASMismatchException`) |
+| `test_02_cb_upsert_delete.py` | `02_cb_upsert_delete.py` | Upsert and delete |
+| `test_03a_cb_query.py` | `03a_cb_query.py` | SQL++ query execution |
+| `test_03b_cb_query_profile.py` | `03b_cb_query_profile.py` | Query profiling |
+| `test_04_cb_sub_doc_ops.py` | `04_cb_sub_doc_ops.py` | lookup_in / mutate_in |
+| `test_05_cb_exception_handling.py` | `05_cb_exception_handling.py` | Exception handling |
+| `test_06_cb_get_retry_replica_read.py` | `06_cb_get_retry_replica_read.py` | Retry + replica reads |
+| `test_07_cb_query_own_write.py` | `07_cb_query_own_write.py` | Scan consistency (not in `run_tests.py`) |
+| `test_08a_cb_transaction_kv.py` | `08a_cb_transaction_kv.py` | KV transactions (not in `run_tests.py`) |
+| `test_08b_cb_transaction_query.py` | `08b_cb_transaction_query.py` | Query transactions (not in `run_tests.py`) |
+| `test_09_cb_fts_search.py` | `09_cb_fts_search.py` | FTS SQL++ + SDK search |
+| `test_10_cb_debug_tracing.py` | `10_cb_debug_tracing.py` | Logging + native OTel |
+| `test_11_cb_async_operations.py` | `11_cb_async_operations.py` | Async KV |
+| `test_12_cb_async_queries.py` | `12_cb_async_queries.py` | Async SQL++ |
+| `test_13_cb_increment.py` | `13_cb_increment.py` | Binary counters (not in `run_tests.py`) |
+| `test_advanced_prepared_statement_wrapper.py` | `advanced_prepared_statement_wrapper.py` | Prepared statements |
+| `test_excel_to_json_to_cb.py` | `excel_to_json_to_cb.py` | CSV/Excel bulk import |
+| `test_ai_vector_search.py` | `ai_vector_sample/04_vector_search_using_python_sdk.py` | Vector search script under mocks |
+| `test_sample_syntax.py` | all sample `.py` files | Compile-check so syntax errors fail the suite |
+
+There are **20 test files** and **226** collected cases on disk. The supported runner executes a subset (see below).
 
 ## Running the Tests
 
 ### Prerequisites
 
-Make sure you have the required dependencies installed:
-
 ```bash
 pip install -r requirements.txt
 ```
 
-The test dependencies include:
-- `unittest` (built-in Python module)
-- `unittest.mock` (built-in Python module)
-- All dependencies from the main `requirements.txt` file
+Python **3.10+**. `unittest` / `unittest.mock` are stdlib.
 
-### Running All Tests
+SDK 4.6 samples use `Cluster.connect()` / `await Cluster.connect()`. Tests mock that **classmethod**, not the constructor.
 
-To run all tests in the test suite:
+`tests/__init__.py` must exist so the local package is imported instead of a site-packages `tests` module.
+
+### Supported runner
 
 ```bash
-python3 -m unittest discover -s tests -p "test_*.py" -v
+python3 run_tests.py
 ```
 
-### Running Individual Test Files
+**Current result: 165 tests, 0 failures.**
 
-To run a specific test file:
+That runner always loads:
+
+- `test_01_cb_set_get`
+- `test_11_cb_async_operations`
+- `test_12_cb_async_queries`
+- `test_advanced_prepared_statement_wrapper`
+
+and then the “safe” list (excel, 01b CAS, 02–06, 09, 10, vector, syntax).
+
+**Not in `run_tests.py`:** `test_07_*`, `test_08a_*`, `test_08b_*`, `test_13_*` (MagicMock / `assertRaises` issues). They remain on disk for later.
+
+### Other invocations
 
 ```bash
+# Single file
 python3 -m unittest tests.test_01_cb_set_get -v
 python3 -m unittest tests.test_excel_to_json_to_cb -v
-```
 
-### Running Specific Test Cases
-
-To run a specific test method:
-
-```bash
+# Single method
 python3 -m unittest tests.test_01_cb_set_get.TestCbSetGet.test_upsert_document -v
+
+# Full discover (includes 07/08/13; expect failures there)
+python3 -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 ## Test Architecture
 
 ### Mocking Strategy
 
-The tests use comprehensive mocking to avoid requiring an actual Couchbase cluster:
+Most unit tests mock Couchbase and reimplement sample logic. They do **not** import `01a_cb_set_get.py` (and siblings) because those scripts connect at import time. Treat them as API-shape docs, not as a guarantee that every sample file still runs live.
 
-1. **Couchbase SDK Mocking**: All Couchbase operations are mocked using `unittest.mock`
-2. **Module Import Mocking**: Handles numbered filename imports (e.g., `01_cb_set_get.py`) using `importlib.util`
-3. **External Dependencies**: pandas, OpenTelemetry, and other dependencies are mocked
-4. **File System Operations**: File I/O operations are mocked using `mock_open`
+`tests/test_sample_syntax.py` compile-checks every sample `.py` so a syntax error fails `python3 run_tests.py`. The vector test is the only one that `exec`s a sample file.
 
-### Test Coverage
-
-Each test file includes:
-
-- **Successful Operations**: Tests for normal operation scenarios
-- **Exception Handling**: Tests for various Couchbase exceptions
-- **Edge Cases**: Tests for timeout, retry, network errors
-- **Configuration**: Tests for connection setup and teardown
-- **Timing**: Tests for execution time measurement
-- **Data Validation**: Tests for input validation and data processing
+1. **Couchbase SDK Mocking**: Operations mocked with `unittest.mock` when the SDK is absent; with the SDK installed, real exception classes are used
+2. **Connect shape**: `Cluster.connect` / `await Cluster.connect`, plus `await bucket.on_connect()` on async clients
+3. **External Dependencies**: pandas, OpenTelemetry, tqdm mocked as needed
+4. **File I/O**: `mock_open`
 
 ### Common Test Patterns
 
-1. **Setup Method**: Each test class has a `setUp()` method to initialize mocks
-2. **Import Mocking**: Uses `@patch('builtins.__import__')` for module import control
-3. **Time Mocking**: Uses `@patch('time.time')` for consistent timing tests
-4. **Print Mocking**: Uses `@patch('builtins.print')` to verify output
-5. **Exception Testing**: Comprehensive exception scenario coverage
+1. `setUp()` initializes mocks
+2. Time mocked with `@patch('time.time')` where timing is asserted
+3. Print mocked to verify output
+4. Exception classes must inherit `BaseException` (the runner installs real-shaped stubs if the SDK is missing)
 
 ## Test Status
 
-The tests are designed to run independently of external dependencies, though some currently have execution issues:
+| Check | Status |
+|-------|--------|
+| Live Couchbase required | No (mocks) |
+| External files required | No |
+| `python3 run_tests.py` | **165 tests, 0 failures** |
+| Python | 3.10–3.14 |
+| SDK pin under test | 4.6.3 |
+| 07 / 08a / 08b / 13 in runner | No (skipped on purpose) |
+| Live cluster E2E | Separate; run the sample scripts against localhost |
 
-- ✅ **No Couchbase cluster required**: All Couchbase operations are mocked
-- ✅ **No external files required**: File operations are mocked
-- ⚠️ **Dependency isolation**: Some tests fail due to missing optional dependencies (pandas, opentelemetry)
-- ⚠️ **Module import mocking**: Tests for numbered modules (01_, 02_, etc.) have import mocking challenges
-- ✅ **Comprehensive coverage**: All major code paths are tested in the test logic
-- ✅ **Exception scenarios**: Error conditions are thoroughly tested
-
-### Current Test Results
-
-**Recommended Test Execution:**
-Use the provided `run_tests.py` script for best results: `python3 run_tests.py`
-
-**Working Tests:**
-- ✅ `test_01_cb_set_get.py` - 4/4 tests passing
-- ✅ `test_advanced_prepared_statement_wrapper.py` - 9/11 tests passing (6 working, 5 with minor issues)
-
-**Tests with Issues:**
-- ⚠️ **Numbered Module Tests** (02-10): Need import mocking refinement for `02_cb_*`, `03_cb_*`, etc.
-- ⚠️ **Dependency Tests**: Some tests still have complex dependency chain issues
-- ⚠️ **Exception Mocking**: A few tests need better exception class mocking
-
-**Test Status Summary:**
-- **10/15 tests passing, 0 failures** in the simplified test runner (significant improvement!)
-- Core test logic and mocking strategies are sound
-- Eliminated all "invalid format" errors by using the simplified runner
-- Main remaining issues are with exception class compatibility in advanced tests
-
-### Recommended Execution
-
-**For stable tests:**
-```bash
-python3 run_tests.py
-```
-
-**For full test discovery (with expected failures):**
-```bash 
-python3 -m unittest discover -s tests -p "test_*.py" -v
-```
-
-### Fixing Remaining Issues
-
-1. **Exception Classes**: Mock exception classes need to inherit from `BaseException`
-2. **Complex Import Mocking**: Numbered modules need better import handling
-3. **Side Effect Assignment**: Some test setup needs refinement for mock behavior
+Do not quote older “10/15 tests passing” figures — that predates the 4.6 runner.
 
 ## Debugging Test Issues
 
-### Common Issues and Solutions
-
-1. **Module Import Errors**: 
-   - Ensure the parent directory is in the Python path
-   - Check that `sys.path.insert(0, ...)` is correct in test files
-
-2. **Mock Import Issues**:
-   - Verify that the mock path matches the actual import path
-   - Use `importlib.util` for numbered module names
-
-3. **Dependency Errors**:
-   - Install required packages: `pip install -r requirements.txt`
-   - Ensure mocks are properly configured for optional dependencies
-
-4. **Path Issues**:
-   - All file paths in tests use absolute paths
-   - Mock file operations don't require actual files to exist
-
-### Test Execution Environment
-
-The tests are designed to work in any Python environment with:
-- Python 3.6+
-- unittest (built-in)
-- unittest.mock (built-in)
-- Required project dependencies (for proper mocking)
+1. **Module Import Errors**: Parent directory on `sys.path`; `tests/__init__.py` present
+2. **Mock path**: Match the import used in the test (4.6 is `Cluster.connect`)
+3. **Dependencies**: `pip install -r requirements.txt`
+4. **Shadowed `tests` package**: Without `tests/__init__.py`, Python can import site-packages `tests` instead of this directory
 
 ## Contributing
 
-When adding new tests:
+When adding tests:
 
-1. Follow the existing naming convention: `test_[source_file_name].py`
-2. Use comprehensive mocking to avoid external dependencies
-3. Include both success and failure scenarios
-4. Add timing tests where applicable
-5. Document any special test requirements
-6. Ensure tests can run independently
+1. Name them `test_[source_file_name].py`
+2. Mock `Cluster.connect` (not the constructor)
+3. Include success and failure paths
+4. Do not require a live cluster
+5. Add the module to `run_tests.py` only if it stays green under the runner’s mocks
+6. Prefer behavior/invariants over snapshots of SDK internals
 
 ## Notes
 
-- These tests focus on unit testing individual functions and exception handling
-- Integration tests with actual Couchbase clusters should be handled separately
-- The tests verify code structure, flow, and error handling rather than actual database operations
-- All external dependencies (Couchbase SDK, pandas, etc.) are mocked for isolation
+- These tests check code structure, call shapes, and error handling — not a live database
+- Integration against Couchbase is done by running the sample scripts
+- All external dependencies can be mocked for isolation
