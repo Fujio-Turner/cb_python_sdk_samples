@@ -1,0 +1,106 @@
+{
+  "type": "fulltext-index",
+  "name": "hotels-index",
+  "sourceType": "gocbcore",
+  "sourceName": "travel-sample",
+  "planParams": {
+    "indexPartitions": 1,
+    "numReplicas": 0
+  },
+  "params": {
+    "doc_config": {
+      "docid_prefix_delim": "",
+      "docid_regexp": "",
+      "mode": "scope.collection.type_field",
+      "type_field": "type"
+    },
+    "mapping": {
+      "analysis": {},
+      "default_analyzer": "standard",
+      "default_datetime_parser": "dateTimeOptional",
+      "default_field": "_all",
+      "default_mapping": {
+        "dynamic": false,
+        "enabled": false
+      },
+      "default_type": "_default",
+      "docvalues_dynamic": false,
+      "index_dynamic": true,
+      "store_dynamic": false,
+      "type_field": "_type",
+      "types": {
+        "inventory.hotel": {
+          "dynamic": false,
+          "enabled": true,
+          "properties": {
+            "name": {
+              "dynamic": false,
+              "enabled": true,
+              "fields": [
+                {
+                  "name": "name",
+                  "type": "text",
+                  "index": true,
+                  "store": true,
+                  "docvalues": true,
+                  "include_in_all": true,
+                  "include_term_vectors": true
+                }
+              ]
+            },
+            "country": {
+              "dynamic": false,
+              "enabled": true,
+              "fields": [
+                {
+                  "name": "country",
+                  "type": "text",
+                  "index": true,
+                  "store": true,
+                  "docvalues": true,
+                  "include_in_all": true,
+                  "include_term_vectors": true
+                }
+              ]
+            },
+            "city": {
+              "dynamic": false,
+              "enabled": true,
+              "fields": [
+                {
+                  "name": "city",
+                  "type": "text",
+                  "index": true,
+                  "store": true,
+                  "docvalues": true,
+                  "include_in_all": true,
+                  "include_term_vectors": true
+                }
+              ]
+            },
+            "description": {
+              "dynamic": false,
+              "enabled": true,
+              "fields": [
+                {
+                  "name": "description",
+                  "type": "text",
+                  "index": true,
+                  "store": true,
+                  "docvalues": true,
+                  "include_in_all": true,
+                  "include_term_vectors": true
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "store": {
+      "indexType": "scorch",
+      "segmentVersion": 15
+    }
+  },
+  "sourceParams": {}
+}

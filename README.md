@@ -41,7 +41,7 @@ python3 01a_cb_set_get.py
 - **06** - High availability with replica reads
 - **07** - Read-your-own-writes consistency
 - **08a/08b** - ACID transactions (KV & Query)
-- **09** - Full-text search with auto-index creation
+- **09** - Full-text search (SQL++ SEARCH + SDK `scope.search()`; create index with `python3 fts/create_hotels_index.py`)
 - **10** - Debugging, logging, slow ops detection, **orphaned request reporting**, OpenTelemetry
 - **11** - **Async operations with class-based design** ⚡
 

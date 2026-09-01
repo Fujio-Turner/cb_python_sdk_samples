@@ -151,8 +151,8 @@ Comprehensive full-text search demonstrating **both approaches**:
 - `MatchQuery` - Match term in field
 - `MatchPhraseQuery` - Exact phrase matching
 - `ConjunctionQuery` - AND logic (multiple conditions)
-- Uses `cluster.search()` for global/bucket-level indexes
-- Uses `scope.search()` for scoped indexes (SDK 4.6.1+ passes scope/bucket names; gated by `USE_SCOPED_SEARCH_EXAMPLE`)
+- Uses `scope.search()` for the scoped `hotels-index` (`fts/hotels-index.json`)
+- Create the index with `python3 fts/create_hotels_index.py` (Search REST API, port 8094)
 - `ConjunctionQuery([q1, q2])` list form (SDK 4.5+)
 - Returns document IDs (faster, ~40x)
 - Composable, type-safe query objects

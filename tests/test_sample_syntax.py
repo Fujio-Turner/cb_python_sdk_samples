@@ -23,6 +23,7 @@ SAMPLE_FILES = [
     "08a_cb_transaction_kv.py",
     "08b_cb_transaction_query.py",
     "09_cb_fts_search.py",
+    "fts/create_hotels_index.py",
     "10_cb_debug_tracing.py",
     "11_cb_async_operations.py",
     "12_cb_async_queries.py",

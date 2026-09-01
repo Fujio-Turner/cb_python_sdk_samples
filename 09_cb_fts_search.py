@@ -5,7 +5,7 @@ Demonstrates Full-Text Search (FTS) in Couchbase using both methods:
 
 This script shows how to:
 - Perform FTS using SQL++ SEARCH() function (works immediately)
-- Perform FTS using native SDK methods (requires scope-level index)
+- Perform FTS using native SDK methods (requires the scoped index in fts/hotels-index.json)
 - Compare both approaches with detailed pros/cons
 - Understand when to use each method
 
@@ -75,13 +75,19 @@ PASSWORD = "password"
 # PASSWORD = "your-capella-password"
 
 BUCKET_NAME = "travel-sample"
-INDEX_NAME = "hotels-index"
+CB_SCOPE = "inventory"
+INDEX_NAME = "hotels-index"  # scoped SDK name
+# SQL++ SEARCH() requires the fully-qualified scoped index name:
+SQL_INDEX_NAME = f"{BUCKET_NAME}.{CB_SCOPE}.{INDEX_NAME}"
 
-# Set to True to enable native SDK examples (uses cluster.search() with bucket-level index)
-USE_NATIVE_SDK_EXAMPLES = True  # Your bucket-level index should work
-# Set True only if INDEX_NAME is a *scope-level* FTS index. Bucket-level indexes
-# must use cluster.search(); scope.search() will fail on them (SDK 4.6.1+).
-USE_SCOPED_SEARCH_EXAMPLE = False
+# Create the index once:
+#   python3 fts/create_hotels_index.py
+# Definition: fts/hotels-index.json (inventory.hotel: name, country, city, description)
+
+# Native SDK examples use scope.search() (correct for this scoped index).
+USE_NATIVE_SDK_EXAMPLES = True
+# cluster.search() is only for *global* indexes. Leave False for hotels-index.
+USE_CLUSTER_SEARCH_EXAMPLE = False
 
 # User Input ends here.
 
@@ -100,7 +106,7 @@ cluster.wait_until_ready(timedelta(seconds=10))
 
 # Get references
 bucket = cluster.bucket(BUCKET_NAME)
-scope = bucket.scope("inventory")
+scope = bucket.scope(CB_SCOPE)
 
 print("=" * 70)
 print("FULL-TEXT SEARCH (FTS) EXAMPLES")
@@ -114,7 +120,8 @@ print("\nDemonstrating SQL++ SEARCH() and Native SDK approaches\n")
 print("=" * 70)
 print("PART 1: SQL++ SEARCH() Function Approach")
 print("=" * 70)
-print("No additional index setup required - uses cluster-level indexing\n")
+print("SQL++ SEARCH() uses the same scoped FTS index (fts/hotels-index.json).\n")
+print("Create it with: python3 fts/create_hotels_index.py\n")
 
 
 # Example 1: Basic SEARCH() with SQL++
@@ -122,7 +129,7 @@ print("--- Example 1 (SQL++): Basic Text Search ---")
 query = f"""
 SELECT `name`, `country`
 FROM `{BUCKET_NAME}`.`inventory`.`hotel`
-WHERE SEARCH(`hotel`, "paris")
+WHERE SEARCH(`hotel`, "paris", {{"index": "{SQL_INDEX_NAME}"}})
 LIMIT $limit
 """
 
@@ -145,7 +152,7 @@ print("\n--- Example 2 (SQL++): Wildcard Search ---")
 query = f"""
 SELECT `name`, `country`
 FROM `{BUCKET_NAME}`.`inventory`.`hotel`
-WHERE SEARCH(`hotel`, "country:fran*")
+WHERE SEARCH(`hotel`, "country:fran*", {{"index": "{SQL_INDEX_NAME}"}})
 LIMIT $limit
 """
 
@@ -168,7 +175,7 @@ print("\n--- Example 3 (SQL++): Boolean AND Search ---")
 query = f"""
 SELECT `name`, `city`, `country`
 FROM `{BUCKET_NAME}`.`inventory`.`hotel`
-WHERE SEARCH(`hotel`, "country:france AND city:paris")
+WHERE SEARCH(`hotel`, "country:france AND city:paris", {{"index": "{SQL_INDEX_NAME}"}})
 LIMIT $limit
 """
 
@@ -199,9 +206,9 @@ if not USE_NATIVE_SDK_EXAMPLES:
     print("\nYour current index setup will work - it's bucket-level, not scope-level.")
     print("The examples use cluster.search() which works with bucket-level indexes.\n")
 else:
-    print("\nNative SDK examples ENABLED - using bucket-level FTS index\n")
+    print("\nNative SDK examples ENABLED - using scoped FTS index via scope.search()\n")
     
-    # Example 4: MatchQuery - Using cluster.search() for bucket-level index
+    # Example 4: MatchQuery - scope.search() for a scoped index (SDK 4.6.1+)
     print("--- Example 4 (SDK): MatchQuery for 'paris' ---")
     try:
         start_time = time.time()
@@ -209,8 +216,7 @@ else:
         query = MatchQuery("paris", field="name")
         request = SearchRequest.create(query)
         
-        # Use cluster.search() for bucket-level index (not scope.search())
-        search_result = cluster.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "country"]))
+        search_result = scope.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "country"]))
         
         rows = list(search_result.rows())
         elapsed = time.time() - start_time
@@ -222,7 +228,7 @@ else:
                 print(f"  - {row.fields.get('name', 'N/A')} ({row.fields.get('country', 'N/A')})")
             else:
                 print(f"  - ID: {row.id}")
-        print(f"  Time: {elapsed:.4f}s | Method: SDK MatchQuery + cluster.search()")
+        print(f"  Time: {elapsed:.4f}s | Method: SDK MatchQuery + scope.search()")
     except Exception as e:
         print(f"✗ Error: {e}")
     
@@ -235,7 +241,7 @@ else:
         query = MatchPhraseQuery("historic building", field="description")
         request = SearchRequest.create(query)
         
-        search_result = cluster.search(INDEX_NAME, request, SearchOptions(limit=3, fields=["name", "description"]))
+        search_result = scope.search(INDEX_NAME, request, SearchOptions(limit=3, fields=["name", "description"]))
         
         rows = list(search_result.rows())
         elapsed = time.time() - start_time
@@ -248,7 +254,7 @@ else:
                 print(f"  - {name}: {desc[:60]}...")
             else:
                 print(f"  - ID: {row.id}")
-        print(f"  Time: {elapsed:.4f}s | Method: SDK MatchPhraseQuery + cluster.search()")
+        print(f"  Time: {elapsed:.4f}s | Method: SDK MatchPhraseQuery + scope.search()")
     except Exception as e:
         print(f"✗ Error: {e}")
     
@@ -265,7 +271,7 @@ else:
         conjunction = ConjunctionQuery([query1, query2])
         request = SearchRequest.create(conjunction)
         
-        search_result = cluster.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "city", "country"]))
+        search_result = scope.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "city", "country"]))
         
         rows = list(search_result.rows())
         elapsed = time.time() - start_time
@@ -276,28 +282,25 @@ else:
                 print(f"  - {row.fields.get('name', 'N/A')}")
             else:
                 print(f"  - ID: {row.id}")
-        print(f"  Time: {elapsed:.4f}s | Method: SDK ConjunctionQuery + cluster.search()")
+        print(f"  Time: {elapsed:.4f}s | Method: SDK ConjunctionQuery + scope.search()")
     except Exception as e:
         print(f"✗ Error: {e}")
 
-    # Example 7: Scoped search (SDK 4.6.1+ passes scope_name/bucket_name for scoped indexes)
-    print("\n--- Example 7 (SDK): scope.search() for a scoped index ---")
-    print("  Use cluster.search() for global/bucket-level indexes.")
-    print("  Use scope.search() for indexes created on a scope (required as of 4.6.1).")
-    if not USE_SCOPED_SEARCH_EXAMPLE:
-        print("  Skipped (USE_SCOPED_SEARCH_EXAMPLE = False).")
-        print("  Enable only when INDEX_NAME is a scope-level FTS index.")
+    # Example 7: cluster.search() is for *global* indexes only
+    print("\n--- Example 7 (SDK): cluster.search() vs scope.search() ---")
+    print("  hotels-index is scoped → examples 4–6 use scope.search().")
+    if not USE_CLUSTER_SEARCH_EXAMPLE:
+        print("  Skipped cluster.search() (USE_CLUSTER_SEARCH_EXAMPLE = False).")
+        print("  Enable only for a cluster-level (global) FTS index.")
     else:
         try:
-            start_time = time.time()
             query = MatchQuery("paris", field="name")
             request = SearchRequest.create(query)
-            search_result = scope.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "country"]))
+            search_result = cluster.search(INDEX_NAME, request, SearchOptions(limit=5, fields=["name", "country"]))
             rows = list(search_result.rows())
-            elapsed = time.time() - start_time
-            print(f"✓ scope.search() returned {len(rows)} rows in {elapsed:.4f}s")
+            print(f"✓ cluster.search() returned {len(rows)} rows")
         except Exception as e:
-            print(f"✗ scope.search() error: {e}")
+            print(f"✗ cluster.search() error (expected for a scoped index): {e}")
 
 
 # ============================================================================
